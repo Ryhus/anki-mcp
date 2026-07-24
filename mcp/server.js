@@ -1,7 +1,7 @@
 import "dotenv/config";
 
-import { McpServer } from "@modelcontextprotocol/server";
-import { StdioServerTransport } from "@modelcontextprotocol/server/stdio";
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import * as deck from "./tools/deck-tools.js";
 import * as card from "./tools/card-tools.js";
