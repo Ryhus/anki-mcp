@@ -133,7 +133,7 @@ to avoid corrupting MCP protocol messages.
 ```text
 .
 ├── anki-api/
-│   └── anki-request.js       # HTTP client for AnkiConnect
+│   └── anki-request.ts       # HTTP client for AnkiConnect
 ├── mcp/
 │   ├── server.js             # MCP server entry point and tool registration
 │   ├── tools/
