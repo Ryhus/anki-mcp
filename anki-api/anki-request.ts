@@ -50,3 +50,21 @@ export async function callAnki<TResult = unknown>(
 
   return payload as AnkiResponse<TResult>;
 }
+
+/**
+ * Calls an AnkiConnect action and unwraps its result.
+ *
+ * @throws When AnkiConnect reports an action-level error.
+ */
+export async function invokeAnki<TResult = unknown>(
+  action: string,
+  params?: AnkiRequestParams,
+): Promise<TResult> {
+  const { result, error } = await callAnki<TResult>(action, params);
+
+  if (error !== null) {
+    throw new Error(`AnkiConnect action "${action}" failed: ${error}`);
+  }
+
+  return result;
+}

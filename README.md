@@ -133,15 +133,21 @@ to avoid corrupting MCP protocol messages.
 ```text
 .
 ├── anki-api/
-│   └── anki-request.ts       # HTTP client for AnkiConnect
+│   ├── anki-request.ts       # HTTP client for AnkiConnect
+│   └── decks/
+│       ├── deck-client.ts    # Typed AnkiConnect deck operations
+│       └── deck-types.ts     # AnkiConnect deck response types
 ├── mcp/
 │   ├── server.js             # MCP server entry point and tool registration
 │   ├── tools/
 │   │   ├── card-tools.js     # Card-related operations
-│   │   ├── deck-tools.js     # Deck-related operations
+│   │   ├── decks/            # Deck tool contracts and handlers
 │   │   └── note-tools.js     # Note-related operations
 │   └── utils/
-│       └── formatting.js     # MCP response formatting
+│       ├── formatting.js     # Legacy MCP response formatting
+│       ├── tool-annotations.ts # Shared MCP behavior annotations
+│       ├── tool-handler.ts   # Shared tool error handling
+│       └── tool-result.ts    # Structured MCP result creation
 ├── dist/                     # Generated build output
 ├── package.json
 └── tsconfig.json
@@ -149,17 +155,30 @@ to avoid corrupting MCP protocol messages.
 
 The server currently exposes tools for:
 
-- creating, deleting, inspecting, and configuring decks;
+- listing, creating, deleting, and inspecting decks;
 - finding, inspecting, moving, suspending, and reviewing cards;
 - creating, finding, updating, tagging, and deleting notes.
+
+### Deck tools
+
+- `list-decks` lists every deck with its ID and hierarchy metadata.
+- `create-deck` creates a deck or returns the existing deck with the same name.
+- `get-deck-stats` returns scheduler counts for selected or all decks.
+- `get-card-decks` groups card IDs by their current deck.
+- `move-cards-to-deck` moves cards and creates the target deck when necessary.
+- `delete-deck-and-cards` permanently deletes one deck and all of its cards.
+
+Low-level deck configuration ID operations are not exposed to MCP clients.
+Deck option management will be added separately after its behavior has been
+validated against current Anki versions.
 
 ## Adding an MCP tool
 
 1. Add the implementation to the appropriate module in `mcp/tools/`.
 2. Call Anki through `callAnki` from `anki-api/anki-request`.
-3. Return an MCP-compatible result, normally through `formatResult`.
-4. Import and register the tool in `mcp/server`.
-5. Define its input schema with Zod.
+3. Define its input and output schemas with Zod.
+4. Return readable `content` and machine-readable `structuredContent`.
+5. Register the tool in its domain module or in `mcp/server`.
 6. Run the type check and build:
 
 ```bash
