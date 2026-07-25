@@ -134,13 +134,16 @@ to avoid corrupting MCP protocol messages.
 .
 ├── anki-api/
 │   ├── anki-request.ts       # HTTP client for AnkiConnect
+│   ├── cards/
+│   │   ├── card-client.ts    # Typed AnkiConnect card operations
+│   │   └── card-types.ts     # AnkiConnect card response types
 │   └── decks/
 │       ├── deck-client.ts    # Typed AnkiConnect deck operations
 │       └── deck-types.ts     # AnkiConnect deck response types
 ├── mcp/
-│   ├── server.js             # MCP server entry point and tool registration
+│   ├── server.js             # MCP server entry point
 │   ├── tools/
-│   │   ├── card-tools.js     # Card-related operations
+│   │   ├── cards/            # Card tool contracts and handlers
 │   │   ├── decks/            # Deck tool contracts and handlers
 │   │   └── note-tools.js     # Note-related operations
 │   └── utils/
@@ -159,6 +162,23 @@ The server currently exposes tools for:
 - finding, inspecting, moving, suspending, and reviewing cards;
 - creating, finding, updating, tagging, and deleting notes.
 
+### Card tools
+
+- `search-cards` searches with Anki query syntax and returns a bounded page of
+  scheduling summaries.
+- `get-card-details` returns note fields and normalized scheduling data for
+  selected cards.
+- `get-card-review-history` returns bounded, newest-first review history.
+- `set-card-suspension` suspends or unsuspends cards.
+- `set-card-flag` safely applies one of Anki's supported flag colors.
+- `reschedule-cards` changes due dates with Anki's Set Due Date syntax.
+- `reset-cards-to-new` resets card scheduling progress.
+- `start-card-relearning` moves cards into the relearning state.
+
+Low-level scheduling field and ease-factor setters are not exposed to MCP
+clients. Answering cards is also deferred to a future user-driven review
+workflow so an LLM cannot create review history on the user's behalf.
+
 ### Deck tools
 
 - `list-decks` lists every deck with its ID and hierarchy metadata.
@@ -175,7 +195,8 @@ validated against current Anki versions.
 ## Adding an MCP tool
 
 1. Add the implementation to the appropriate module in `mcp/tools/`.
-2. Call Anki through `callAnki` from `anki-api/anki-request`.
+2. Add typed AnkiConnect operations to the appropriate `anki-api/` domain
+   client and call them through `invokeAnki`.
 3. Define its input and output schemas with Zod.
 4. Return readable `content` and machine-readable `structuredContent`.
 5. Register the tool in its domain module or in `mcp/server`.
