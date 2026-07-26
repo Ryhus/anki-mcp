@@ -62,6 +62,15 @@ npm run typecheck
 Runs the TypeScript compiler without generating output. Use this command
 frequently while changing types or migrating a file.
 
+### Run tests
+
+```bash
+npm test
+```
+
+Runs the unit tests for local validation and transformation logic. These tests
+do not require Anki to be running.
+
 ### Build the project
 
 ```bash
@@ -92,9 +101,10 @@ npm start
 2. Create the local `.env` file.
 3. Run `npm run dev`.
 4. Make the required source changes.
-5. Run `npm run typecheck`.
-6. Run `npm run build`.
-7. Test the affected tools through an MCP client connected to the server.
+5. Run `npm test`.
+6. Run `npm run typecheck`.
+7. Run `npm run build`.
+8. Test the affected tools through an MCP client connected to the server.
 
 ## Connecting an MCP client
 
@@ -144,7 +154,7 @@ to avoid corrupting MCP protocol messages.
 │   │   ├── note-client.ts    # Typed AnkiConnect note operations
 │   │   └── note-types.ts     # AnkiConnect note response types
 │   └── note-types/
-│       ├── note-type-client.ts # Typed note-type discovery operations
+│       ├── note-type-client.ts # Typed note-type discovery and design operations
 │       └── note-type-types.ts  # AnkiConnect note-type response types
 ├── mcp/
 │   ├── server.js             # MCP server entry point
@@ -152,7 +162,7 @@ to avoid corrupting MCP protocol messages.
 │   │   ├── cards/            # Card tool contracts and handlers
 │   │   ├── decks/            # Deck tool contracts and handlers
 │   │   ├── notes/            # Note tool contracts and handlers
-│   │   └── note-types/       # Note-type discovery tools
+│   │   └── note-types/       # Note-type discovery and HTML/CSS tools
 │   └── utils/
 │       ├── tool-annotations.ts # Shared MCP behavior annotations
 │       ├── tool-handler.ts   # Shared tool error handling
@@ -203,9 +213,36 @@ validated against current Anki versions.
 - `list-note-types` lists the note types available for note creation.
 - `get-note-type-schema` returns ordered fields and the fields used by each
   generated card template.
+- `get-note-type-design` returns the complete front/back HTML, shared CSS,
+  ordered fields, and a revision hash.
+- `update-note-type-styling` validates and replaces the CSS shared by all cards
+  generated from a note type.
+- `update-note-type-templates` validates and replaces selected front or back
+  HTML templates in one Anki update.
 
 AnkiConnect calls note types "models" in its API, so note-type tool inputs use
 `modelName` to stay consistent with existing AnkiConnect and card payloads.
+
+The update tools default to `dryRun: true`. A safe design-editing workflow is:
+
+1. Call `get-note-type-design`.
+2. Propose a CSS or HTML change with the returned `designHash` as
+   `expectedDesignHash`.
+3. Review the dry-run validation errors, warnings, and before/after hashes.
+4. Repeat the same update with `dryRun: false`.
+
+`expectedDesignHash` is required when `dryRun` is false. This prevents an LLM
+from overwriting a design that was changed in Anki after the LLM read it.
+
+Styling and templates belong to a note type, not to one note or card. A
+successful update therefore changes every card generated from that note type.
+The tools return the previous content in their change details, but do not
+create or store backup files. A recent change can be reverted with Anki Undo;
+Anki's collection backups remain the fallback for older changes.
+
+Local validation checks CSS structure, Anki field references, conditional
+sections, and potentially executable or externally loaded content. Anki still
+performs the authoritative template validation when an update is applied.
 
 ### Note tools
 
@@ -240,6 +277,7 @@ data-preservation rules.
 6. Run the type check and build:
 
 ```bash
+npm test
 npm run typecheck
 npm run build
 ```

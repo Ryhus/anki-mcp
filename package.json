@@ -18,8 +18,9 @@
     "dev": "tsx watch mcp/server.js",
     "build": "tsc",
     "start": "node dist/mcp/server.js",
+    "test": "tsx --test tests/*.test.ts",
     "typecheck": "tsc --noEmit",
-    "prepublishOnly": "npm run typecheck && npm run build"
+    "prepublishOnly": "npm test && npm run typecheck && npm run build"
   },
   "keywords": [
     "anki",
