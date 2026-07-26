@@ -137,17 +137,23 @@ to avoid corrupting MCP protocol messages.
 │   ├── cards/
 │   │   ├── card-client.ts    # Typed AnkiConnect card operations
 │   │   └── card-types.ts     # AnkiConnect card response types
-│   └── decks/
-│       ├── deck-client.ts    # Typed AnkiConnect deck operations
-│       └── deck-types.ts     # AnkiConnect deck response types
+│   ├── decks/
+│   │   ├── deck-client.ts    # Typed AnkiConnect deck operations
+│   │   └── deck-types.ts     # AnkiConnect deck response types
+│   ├── notes/
+│   │   ├── note-client.ts    # Typed AnkiConnect note operations
+│   │   └── note-types.ts     # AnkiConnect note response types
+│   └── note-types/
+│       ├── note-type-client.ts # Typed note-type discovery operations
+│       └── note-type-types.ts  # AnkiConnect note-type response types
 ├── mcp/
 │   ├── server.js             # MCP server entry point
 │   ├── tools/
 │   │   ├── cards/            # Card tool contracts and handlers
 │   │   ├── decks/            # Deck tool contracts and handlers
-│   │   └── note-tools.js     # Note-related operations
+│   │   ├── notes/            # Note tool contracts and handlers
+│   │   └── note-types/       # Note-type discovery tools
 │   └── utils/
-│       ├── formatting.js     # Legacy MCP response formatting
 │       ├── tool-annotations.ts # Shared MCP behavior annotations
 │       ├── tool-handler.ts   # Shared tool error handling
 │       └── tool-result.ts    # Structured MCP result creation
@@ -191,6 +197,37 @@ workflow so an LLM cannot create review history on the user's behalf.
 Low-level deck configuration ID operations are not exposed to MCP clients.
 Deck option management will be added separately after its behavior has been
 validated against current Anki versions.
+
+### Note type tools
+
+- `list-note-types` lists the note types available for note creation.
+- `get-note-type-schema` returns ordered fields and the fields used by each
+  generated card template.
+
+AnkiConnect calls note types "models" in its API, so note-type tool inputs use
+`modelName` to stay consistent with existing AnkiConnect and card payloads.
+
+### Note tools
+
+- `search-notes` searches with Anki query syntax and returns a bounded page of
+  field previews, tags, and generated card IDs.
+- `get-note-details` returns complete ordered fields and metadata for selected
+  notes.
+- `validate-note-drafts` checks decks, note types, field names, empty-card
+  rules, and duplicates without creating anything.
+- `create-notes` validates and creates a bounded batch, then returns both note
+  IDs and generated card IDs.
+- `update-note-fields` applies partial field patches only after validating the
+  complete batch.
+- `edit-note-tags` adds and removes selected tags without replacing unrelated
+  tags.
+- `list-tags` returns a filtered, paginated view of collection tags.
+- `delete-notes-and-cards` permanently deletes explicit note IDs and all cards
+  generated from them.
+
+Media attachment, global tag replacement, unused-tag cleanup, and note-type
+changes are intentionally deferred because they require additional safety and
+data-preservation rules.
 
 ## Adding an MCP tool
 

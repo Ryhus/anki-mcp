@@ -14,6 +14,13 @@ export const ADDITIVE_TOOL_ANNOTATIONS = {
   openWorldHint: false,
 } satisfies ToolAnnotations;
 
+export const NON_IDEMPOTENT_ADDITIVE_TOOL_ANNOTATIONS = {
+  readOnlyHint: false,
+  destructiveHint: false,
+  idempotentHint: false,
+  openWorldHint: false,
+} satisfies ToolAnnotations;
+
 export const REVERSIBLE_MUTATION_TOOL_ANNOTATIONS = {
   readOnlyHint: false,
   destructiveHint: false,
