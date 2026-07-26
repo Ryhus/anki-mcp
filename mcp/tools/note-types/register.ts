@@ -9,6 +9,10 @@ import {
   cloneNoteTypeConfig,
 } from "./clone-note-type.js";
 import {
+  deleteNoteTypeField,
+  deleteNoteTypeFieldConfig,
+} from "./delete-note-type-field.js";
+import {
   getNoteTypeDesign,
   getNoteTypeDesignConfig,
 } from "./get-note-type-design.js";
@@ -70,6 +74,11 @@ export function registerNoteTypeTools(server: McpServer): void {
     "reposition-note-type-field",
     repositionNoteTypeFieldConfig,
     withToolErrorHandling(repositionNoteTypeField),
+  );
+  server.registerTool(
+    "delete-note-type-field",
+    deleteNoteTypeFieldConfig,
+    withToolErrorHandling(deleteNoteTypeField),
   );
   server.registerTool(
     "update-note-type-styling",

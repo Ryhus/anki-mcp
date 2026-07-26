@@ -111,3 +111,20 @@ export function hasSameFieldOrder(
     left.every((name, index) => name === right[index])
   );
 }
+
+/** Builds an exact Anki search for every note of one note type. */
+export function buildNoteTypeSearchQuery(modelName: string): string {
+  return `note:"${escapeAnkiSearchLiteral(modelName)}"`;
+}
+
+/** Builds an exact search for non-empty values in one note-type field. */
+export function buildNonEmptyFieldSearchQuery(
+  modelName: string,
+  fieldName: string,
+): string {
+  return `${buildNoteTypeSearchQuery(modelName)} "${escapeAnkiSearchLiteral(fieldName)}:_*"`;
+}
+
+function escapeAnkiSearchLiteral(value: string): string {
+  return value.replace(/[\\_*"]/g, (character) => `\\${character}`);
+}

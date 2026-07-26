@@ -222,6 +222,8 @@ validated against current Anki versions.
   and allowing Anki to update template references.
 - `reposition-note-type-field` changes the editor/display order of a field
   without changing its values.
+- `delete-note-type-field` previews the affected notes, then permanently
+  removes a field and all of its values from every note of the note type.
 - `update-note-type-styling` validates and replaces the CSS shared by all cards
   generated from a note type.
 - `update-note-type-templates` validates and replaces selected front or back
@@ -255,6 +257,15 @@ hash as `expectedSchemaHash` when applying it. Adding a field gives every
 existing note an empty value and does not automatically place the new field in
 a card template. Moving a field into the first position changes the field Anki
 uses for duplicate checks, so the tools report that as a warning.
+
+Deleting a field has stronger safeguards because it permanently removes data.
+The dry run reports the total note count, the number of notes with a non-empty
+value, and a bounded sample of affected note IDs. Applying the deletion
+requires the same `schemaHash`, the reviewed non-empty note count as
+`expectedNonEmptyNoteCount`, and `confirmDataLoss: true`. The tool refuses to
+delete the last field or a field still referenced by a card template. It does
+not create an MCP backup, so remove template references and review the impact
+before applying the change.
 
 `expectedDesignHash` is required when `dryRun` is false. This prevents an LLM
 from overwriting a design that was changed in Anki after the LLM read it.

@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { addNoteTypeFieldConfig } from "../mcp/tools/note-types/add-note-type-field.js";
+import { deleteNoteTypeFieldConfig } from "../mcp/tools/note-types/delete-note-type-field.js";
 import {
+  buildNonEmptyFieldSearchQuery,
+  buildNoteTypeSearchQuery,
   calculateNoteTypeSchemaHash,
   createSchemaRevisionIssue,
   hasSameFieldOrder,
@@ -57,6 +60,17 @@ test("schema revision checks reject stale hashes", () => {
   );
 });
 
+test("field deletion searches escape Anki wildcard characters", () => {
+  assert.equal(
+    buildNoteTypeSearchQuery('My "Type"_*'),
+    'note:"My \\"Type\\"\\_\\*"',
+  );
+  assert.equal(
+    buildNonEmptyFieldSearchQuery("Basic", "Extra Info"),
+    'note:"Basic" "Extra Info:_*"',
+  );
+});
+
 test("new field names reject Anki special fields", () => {
   assert.equal(newNoteTypeFieldNameSchema.safeParse("Hint").success, true);
   assert.equal(newNoteTypeFieldNameSchema.safeParse("Tags").success, false);
@@ -89,4 +103,26 @@ test("field mutations require a schema hash when dryRun is false", () => {
   assert.equal(add.success, false);
   assert.equal(rename.success, false);
   assert.equal(reposition.success, false);
+});
+
+test("field deletion requires an impact check and explicit confirmation", () => {
+  const missingConfirmation =
+    deleteNoteTypeFieldConfig.inputSchema.safeParse({
+      modelName: "Basic",
+      fieldName: "Extra",
+      dryRun: false,
+      expectedSchemaHash: "a".repeat(64),
+      expectedNonEmptyNoteCount: 2,
+    });
+  const confirmed = deleteNoteTypeFieldConfig.inputSchema.safeParse({
+    modelName: "Basic",
+    fieldName: "Extra",
+    dryRun: false,
+    expectedSchemaHash: "a".repeat(64),
+    expectedNonEmptyNoteCount: 2,
+    confirmDataLoss: true,
+  });
+
+  assert.equal(missingConfirmation.success, false);
+  assert.equal(confirmed.success, true);
 });

@@ -107,6 +107,17 @@ export function repositionAnkiNoteTypeField(
   });
 }
 
+/** Permanently removes a field and its values from every note of a type. */
+export function removeAnkiNoteTypeField(
+  modelName: string,
+  fieldName: string,
+): Promise<null> {
+  return invokeAnki<null>("modelFieldRemove", {
+    modelName,
+    fieldName,
+  });
+}
+
 /**
  * Updates selected front or back templates.
  *
