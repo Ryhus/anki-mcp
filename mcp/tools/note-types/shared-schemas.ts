@@ -79,6 +79,18 @@ export const noteTypeDesignHashSchema = z
   .regex(/^[a-f0-9]{64}$/)
   .describe("SHA-256 hash of the current CSS and card templates");
 
+export const noteTypeTemplateNameSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(500)
+  .describe("Anki card template name");
+
+export const noteTypeTemplateHtmlSchema = z
+  .string()
+  .min(1)
+  .max(NOTE_TYPE_CONTENT_LIMIT);
+
 export const noteTypeTemplateDesignSchema = z.object({
   name: z.string(),
   order: z.number().int().nonnegative(),
@@ -119,6 +131,19 @@ export const noteTypeFieldMutationResultSchema = z.object({
   afterSchemaHash: noteTypeSchemaHashSchema,
   previousFields: z.array(noteTypeFieldSchema),
   fields: z.array(noteTypeFieldSchema),
+  validation: designValidationSchema,
+  scopeWarning: z.string(),
+});
+
+export const noteTypeTemplateMutationResultSchema = z.object({
+  modelName: z.string(),
+  dryRun: z.boolean(),
+  applied: z.boolean(),
+  changed: z.boolean(),
+  beforeDesignHash: noteTypeDesignHashSchema,
+  afterDesignHash: noteTypeDesignHashSchema,
+  previousTemplates: z.array(noteTypeTemplateDesignSchema),
+  templates: z.array(noteTypeTemplateDesignSchema),
   validation: designValidationSchema,
   scopeWarning: z.string(),
 });

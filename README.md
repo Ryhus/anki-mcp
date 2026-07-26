@@ -226,6 +226,13 @@ validated against current Anki versions.
   without changing its values.
 - `delete-note-type-field` previews the affected notes, then permanently
   removes a field and all of its values from every note of the note type.
+- `add-note-type-template` validates and appends a new Card Template, while
+  reporting how many existing Notes may generate another Card.
+- `rename-note-type-template` renames a Card Template without changing its
+  HTML, Cards, or review history.
+- `reposition-note-type-template` changes the zero-based Card Template order.
+- `delete-note-type-template` previews and permanently removes a Card Template
+  and the Cards generated from it.
 - `update-note-type-styling` validates and replaces the CSS shared by all cards
   generated from a note type.
 - `update-note-type-templates` validates and replaces selected front or back
@@ -240,6 +247,27 @@ HTML, CSS, and Normal/Cloze compatibility. Repeat the same request with
 `dryRun: false` only after reviewing the result. The operation creates only the
 schema and design; it does not create notes or cards. A Cloze definition must
 have exactly one card template with a `{{cloze:Field}}` filter on its front.
+
+The Card Template lifecycle is split into focused operations. Use
+`get-note-type-design` to read names, order, HTML, and `designHash`; use
+`update-note-type-templates` to change existing HTML; and use the add, rename,
+reposition, or delete tool for structural changes. Every structural mutation
+defaults to `dryRun: true` and requires the current `expectedDesignHash` when
+applied.
+
+Adding a Card Template appends it to the current order and may generate one
+new Card per existing Note whose values satisfy the front template. Its apply
+step requires the reviewed `expectedNoteCount` and
+`confirmCardCreation: true`. Reposition it separately if another order is
+needed.
+
+Deleting a Card Template permanently deletes the Cards generated from it and
+their review history. The dry run reports exact Card and affected Note counts,
+including Notes that would lose their last Card. Applying requires the
+reviewed `expectedCardCount`, `expectedNotesLosingLastCardCount`, and
+`confirmCardDeletion: true`; `confirmNoteDeletion: true` is also required when
+any Note may lose its last Card. The last template of a Note Type cannot be
+deleted.
 
 The update tools default to `dryRun: true`. A safe design-editing workflow is:
 

@@ -125,6 +125,6 @@ export function buildNonEmptyFieldSearchQuery(
   return `${buildNoteTypeSearchQuery(modelName)} "${escapeAnkiSearchLiteral(fieldName)}:_*"`;
 }
 
-function escapeAnkiSearchLiteral(value: string): string {
+export function escapeAnkiSearchLiteral(value: string): string {
   return value.replace(/[\\_*"]/g, (character) => `\\${character}`);
 }

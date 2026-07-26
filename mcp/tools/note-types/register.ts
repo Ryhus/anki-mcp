@@ -5,6 +5,10 @@ import {
   addNoteTypeFieldConfig,
 } from "./add-note-type-field.js";
 import {
+  addNoteTypeTemplate,
+  addNoteTypeTemplateConfig,
+} from "./add-note-type-template.js";
+import {
   cloneNoteType,
   cloneNoteTypeConfig,
 } from "./clone-note-type.js";
@@ -16,6 +20,10 @@ import {
   deleteNoteTypeField,
   deleteNoteTypeFieldConfig,
 } from "./delete-note-type-field.js";
+import {
+  deleteNoteTypeTemplate,
+  deleteNoteTypeTemplateConfig,
+} from "./delete-note-type-template.js";
 import {
   getNoteTypeDesign,
   getNoteTypeDesignConfig,
@@ -30,9 +38,17 @@ import {
   renameNoteTypeFieldConfig,
 } from "./rename-note-type-field.js";
 import {
+  renameNoteTypeTemplate,
+  renameNoteTypeTemplateConfig,
+} from "./rename-note-type-template.js";
+import {
   repositionNoteTypeField,
   repositionNoteTypeFieldConfig,
 } from "./reposition-note-type-field.js";
+import {
+  repositionNoteTypeTemplate,
+  repositionNoteTypeTemplateConfig,
+} from "./reposition-note-type-template.js";
 import {
   updateNoteTypeStyling,
   updateNoteTypeStylingConfig,
@@ -88,6 +104,26 @@ export function registerNoteTypeTools(server: McpServer): void {
     "delete-note-type-field",
     deleteNoteTypeFieldConfig,
     withToolErrorHandling(deleteNoteTypeField),
+  );
+  server.registerTool(
+    "add-note-type-template",
+    addNoteTypeTemplateConfig,
+    withToolErrorHandling(addNoteTypeTemplate),
+  );
+  server.registerTool(
+    "rename-note-type-template",
+    renameNoteTypeTemplateConfig,
+    withToolErrorHandling(renameNoteTypeTemplate),
+  );
+  server.registerTool(
+    "reposition-note-type-template",
+    repositionNoteTypeTemplateConfig,
+    withToolErrorHandling(repositionNoteTypeTemplate),
+  );
+  server.registerTool(
+    "delete-note-type-template",
+    deleteNoteTypeTemplateConfig,
+    withToolErrorHandling(deleteNoteTypeTemplate),
   );
   server.registerTool(
     "update-note-type-styling",

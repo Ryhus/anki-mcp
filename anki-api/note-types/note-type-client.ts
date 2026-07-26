@@ -2,6 +2,7 @@ import { invokeAnki } from "../anki-request.js";
 import type {
   AnkiCreatedNoteType,
   AnkiCreateNoteTypeInput,
+  AnkiCreateNoteTypeTemplate,
   AnkiNoteTypeNameMap,
   AnkiNoteTypeStyling,
   AnkiNoteTypeTemplateMap,
@@ -115,6 +116,54 @@ export function removeAnkiNoteTypeField(
   return invokeAnki<null>("modelFieldRemove", {
     modelName,
     fieldName,
+  });
+}
+
+/** Adds a new card template to the end of a note type's template list. */
+export function addAnkiNoteTypeTemplate(
+  modelName: string,
+  template: AnkiCreateNoteTypeTemplate,
+): Promise<null> {
+  return invokeAnki<null>("modelTemplateAdd", {
+    modelName,
+    template,
+  });
+}
+
+/** Renames one card template without changing its HTML. */
+export function renameAnkiNoteTypeTemplate(
+  modelName: string,
+  oldTemplateName: string,
+  newTemplateName: string,
+): Promise<null> {
+  return invokeAnki<null>("modelTemplateRename", {
+    modelName,
+    oldTemplateName,
+    newTemplateName,
+  });
+}
+
+/** Moves one card template to a zero-based order. */
+export function repositionAnkiNoteTypeTemplate(
+  modelName: string,
+  templateName: string,
+  newOrder: number,
+): Promise<null> {
+  return invokeAnki<null>("modelTemplateReposition", {
+    modelName,
+    templateName,
+    index: newOrder,
+  });
+}
+
+/** Permanently removes a card template and its generated cards. */
+export function removeAnkiNoteTypeTemplate(
+  modelName: string,
+  templateName: string,
+): Promise<null> {
+  return invokeAnki<null>("modelTemplateRemove", {
+    modelName,
+    templateName,
   });
 }
 

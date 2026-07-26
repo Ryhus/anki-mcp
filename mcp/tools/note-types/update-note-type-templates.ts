@@ -8,30 +8,25 @@ import {
   calculateNoteTypeDesignHash,
   loadNoteTypeDesign,
 } from "./note-type-design-utils.js";
-import {
-  createDesignValidation,
-} from "./design-validation.js";
+import { createDesignValidation } from "./design-validation.js";
+import { createDesignRevisionIssue } from "./note-type-template-utils.js";
 import { validateTemplateSide } from "./template-validator.js";
 import {
   type DesignValidationIssue,
   designValidationSchema,
-  NOTE_TYPE_CONTENT_LIMIT,
   noteTypeDesignHashSchema,
   noteTypeNameSchema,
+  noteTypeTemplateHtmlSchema,
+  noteTypeTemplateNameSchema,
 } from "./shared-schemas.js";
-
-const templateHtmlSchema = z
-  .string()
-  .min(1)
-  .max(NOTE_TYPE_CONTENT_LIMIT);
 
 const templateUpdateSchema = z
   .object({
-    name: z.string().trim().min(1).max(500),
-    front: templateHtmlSchema
+    name: noteTypeTemplateNameSchema,
+    front: noteTypeTemplateHtmlSchema
       .optional()
       .describe("Complete replacement HTML for the front side"),
-    back: templateHtmlSchema
+    back: noteTypeTemplateHtmlSchema
       .optional()
       .describe("Complete replacement HTML for the back side"),
   })
@@ -132,17 +127,13 @@ export async function updateNoteTypeTemplates({
   }));
   const ankiUpdates: AnkiNoteTypeTemplateUpdates = {};
 
-  if (
-    expectedDesignHash !== undefined &&
-    expectedDesignHash !== current.designHash
-  ) {
-    issues.push({
-      severity: "error" as const,
-      code: "design_changed",
-      path: "expectedDesignHash",
-      message:
-        "The note type design changed after it was read. Load it again before applying an update.",
-    });
+  const revisionIssue = createDesignRevisionIssue(
+    expectedDesignHash,
+    current.designHash,
+  );
+
+  if (revisionIssue !== undefined) {
+    issues.push(revisionIssue);
   }
 
   for (const [updateIndex, update] of templates.entries()) {
@@ -262,9 +253,16 @@ export async function updateNoteTypeTemplates({
   }
 
   await updateAnkiNoteTypeTemplates(modelName, ankiUpdates);
+  const updated = await loadNoteTypeDesign(modelName);
+
+  if (updated.designHash !== result.afterHash) {
+    throw new Error(
+      `Anki returned an unexpected template design after updating "${modelName}"`,
+    );
+  }
 
   return createToolResult(
     `Updated ${changedTemplateCount} template${changedTemplateCount === 1 ? "" : "s"} for note type "${modelName}". ${current.scopeWarning} The update can be reverted immediately with Anki Undo.`,
-    { ...result, applied: true },
+    { ...result, applied: true, afterHash: updated.designHash },
   );
 }

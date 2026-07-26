@@ -6,10 +6,22 @@ import type {
   AnkiSetCardValueResult,
   CardId,
 } from "./card-types.js";
+import type { NoteId } from "../notes/note-types.js";
 
 /** Finds card IDs with Anki's native search syntax. */
 export function findAnkiCards(query: string): Promise<CardId[]> {
   return invokeAnki<CardId[]>("findCards", { query });
+}
+
+/** Resolves the distinct note IDs that own the requested cards. */
+export function getAnkiNoteIdsForCards(
+  cardIds: CardId[],
+): Promise<NoteId[]> {
+  if (cardIds.length === 0) {
+    return Promise.resolve([]);
+  }
+
+  return invokeAnki<NoteId[]>("cardsToNotes", { cards: cardIds });
 }
 
 /** Gets Anki's complete card payload for the requested IDs. */
