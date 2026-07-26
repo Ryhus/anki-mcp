@@ -59,8 +59,9 @@ The entry point is currently `mcp/server.js`. Change the `dev` script to
 npm run typecheck
 ```
 
-Runs the TypeScript compiler without generating output. Use this command
-frequently while changing types or migrating a file.
+Runs the TypeScript compiler without generating output. It checks both the
+application source and the tests. Use this command frequently while changing
+types or migrating a file.
 
 ### Run tests
 
@@ -77,8 +78,9 @@ do not require Anki to be running.
 npm run build
 ```
 
-Compiles the source tree into `dist/`. The generated directory mirrors the
-source structure and includes source maps.
+Compiles the application source tree with `tsconfig.build.json` into `dist/`.
+Tests are type-checked but are not included in the published build. The
+generated directory mirrors the source structure and includes source maps.
 
 The compiler does not write partial output when type errors are present.
 
