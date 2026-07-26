@@ -3,17 +3,9 @@ import type {
   DesignValidation,
   DesignValidationIssue,
 } from "./shared-schemas.js";
+import { ANKI_SPECIAL_FIELD_NAMES } from "./shared-schemas.js";
 
-const ANKI_SPECIAL_FIELDS = new Set([
-  "Card",
-  "CardFlag",
-  "CardID",
-  "Deck",
-  "FrontSide",
-  "Subdeck",
-  "Tags",
-  "Type",
-]);
+const ANKI_SPECIAL_FIELDS = new Set<string>(ANKI_SPECIAL_FIELD_NAMES);
 
 export interface TemplateSideValidationInput {
   html: string;

@@ -216,6 +216,12 @@ validated against current Anki versions.
   ordered fields, and a revision hash.
 - `clone-note-type` safely copies ordered field names, card template HTML, and
   shared CSS into a new independent note type without copying notes or cards.
+- `add-note-type-field` adds an empty field to every note of a note type,
+  optionally at a selected zero-based order.
+- `rename-note-type-field` renames one field while preserving existing values
+  and allowing Anki to update template references.
+- `reposition-note-type-field` changes the editor/display order of a field
+  without changing its values.
 - `update-note-type-styling` validates and replaces the CSS shared by all cards
   generated from a note type.
 - `update-note-type-templates` validates and replaces selected front or back
@@ -242,6 +248,13 @@ detects Cloze templates from `{{cloze:...}}` filters and provides an explicit
 The clone copies ordered field names, card template HTML, and shared CSS. It
 does not copy notes, cards, deck placement, field descriptions, editor font
 settings, or a custom sort-field selection.
+
+Field mutations also default to `dryRun: true`. Call `get-note-type-schema`,
+review its ordered fields and `schemaHash`, preview the mutation, and pass that
+hash as `expectedSchemaHash` when applying it. Adding a field gives every
+existing note an empty value and does not automatically place the new field in
+a card template. Moving a field into the first position changes the field Anki
+uses for duplicate checks, so the tools report that as a warning.
 
 `expectedDesignHash` is required when `dryRun` is false. This prevents an LLM
 from overwriting a design that was changed in Anki after the LLM read it.
@@ -275,9 +288,9 @@ applied.
 - `delete-notes-and-cards` permanently deletes explicit note IDs and all cards
   generated from them.
 
-Media attachment, global tag replacement, unused-tag cleanup, and note-type
-changes are intentionally deferred because they require additional safety and
-data-preservation rules.
+Media attachment, global tag replacement, unused-tag cleanup, and changing an
+existing note to another note type are intentionally deferred because they
+require additional safety and data-preservation rules.
 
 ## Adding an MCP tool
 

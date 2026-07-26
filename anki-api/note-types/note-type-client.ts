@@ -68,6 +68,45 @@ export function getAnkiNoteTypeStyling(
   });
 }
 
+/** Adds a field to a note type, optionally at a zero-based order. */
+export function addAnkiNoteTypeField(
+  modelName: string,
+  fieldName: string,
+  order?: number,
+): Promise<null> {
+  return invokeAnki<null>("modelFieldAdd", {
+    modelName,
+    fieldName,
+    ...(order === undefined ? {} : { index: order }),
+  });
+}
+
+/** Renames a note-type field while preserving its note values. */
+export function renameAnkiNoteTypeField(
+  modelName: string,
+  oldFieldName: string,
+  newFieldName: string,
+): Promise<null> {
+  return invokeAnki<null>("modelFieldRename", {
+    modelName,
+    oldFieldName,
+    newFieldName,
+  });
+}
+
+/** Moves a field to a zero-based order within its note type. */
+export function repositionAnkiNoteTypeField(
+  modelName: string,
+  fieldName: string,
+  newOrder: number,
+): Promise<null> {
+  return invokeAnki<null>("modelFieldReposition", {
+    modelName,
+    fieldName,
+    index: newOrder,
+  });
+}
+
 /**
  * Updates selected front or back templates.
  *
