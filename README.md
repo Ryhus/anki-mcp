@@ -214,6 +214,8 @@ validated against current Anki versions.
   generated card template.
 - `get-note-type-design` returns the complete front/back HTML, shared CSS,
   ordered fields, and a revision hash.
+- `create-note-type` validates and creates a new Normal or Cloze note type from
+  ordered fields, complete card templates, and shared CSS.
 - `clone-note-type` safely copies ordered field names, card template HTML, and
   shared CSS into a new independent note type without copying notes or cards.
 - `add-note-type-field` adds an empty field to every note of a note type,
@@ -231,6 +233,13 @@ validated against current Anki versions.
 
 AnkiConnect calls note types "models" in its API, so note-type tool inputs use
 `modelName` to stay consistent with existing AnkiConnect and card payloads.
+
+To create a note type from scratch, call `create-note-type` with ordered
+`fields` and `templates`. Its dry run validates unique names, field references,
+HTML, CSS, and Normal/Cloze compatibility. Repeat the same request with
+`dryRun: false` only after reviewing the result. The operation creates only the
+schema and design; it does not create notes or cards. A Cloze definition must
+have exactly one card template with a `{{cloze:Field}}` filter on its front.
 
 The update tools default to `dryRun: true`. A safe design-editing workflow is:
 

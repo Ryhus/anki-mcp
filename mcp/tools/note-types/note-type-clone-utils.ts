@@ -1,4 +1,5 @@
 import type { AnkiCreateNoteTypeInput } from "../../../anki-api/note-types/note-type-types.js";
+import { containsClozeFilter } from "./note-type-definition-validator.js";
 import type { NoteTypeDesign } from "./shared-schemas.js";
 
 export interface NoteTypeCloneDefinition
@@ -34,8 +35,4 @@ export function buildNoteTypeCloneDefinition(
     isCloze: isClozeOverride ?? isClozeDetected,
     isClozeDetected,
   };
-}
-
-function containsClozeFilter(html: string): boolean {
-  return /{{[^{}]*\bcloze\s*:/i.test(html);
 }

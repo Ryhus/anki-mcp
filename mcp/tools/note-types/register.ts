@@ -9,6 +9,10 @@ import {
   cloneNoteTypeConfig,
 } from "./clone-note-type.js";
 import {
+  createNoteType,
+  createNoteTypeConfig,
+} from "./create-note-type.js";
+import {
   deleteNoteTypeField,
   deleteNoteTypeFieldConfig,
 } from "./delete-note-type-field.js";
@@ -59,6 +63,11 @@ export function registerNoteTypeTools(server: McpServer): void {
     "clone-note-type",
     cloneNoteTypeConfig,
     withToolErrorHandling(cloneNoteType),
+  );
+  server.registerTool(
+    "create-note-type",
+    createNoteTypeConfig,
+    withToolErrorHandling(createNoteType),
   );
   server.registerTool(
     "add-note-type-field",
