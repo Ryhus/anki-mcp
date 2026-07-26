@@ -174,7 +174,8 @@ The server currently exposes tools for:
 
 - listing, creating, deleting, and inspecting decks;
 - finding, inspecting, moving, suspending, and reviewing cards;
-- creating, finding, updating, tagging, and deleting notes.
+- creating, finding, updating, tagging, and deleting notes;
+- inspecting, cloning, and redesigning note types.
 
 ### Card tools
 
@@ -213,6 +214,8 @@ validated against current Anki versions.
   generated card template.
 - `get-note-type-design` returns the complete front/back HTML, shared CSS,
   ordered fields, and a revision hash.
+- `clone-note-type` safely copies ordered field names, card template HTML, and
+  shared CSS into a new independent note type without copying notes or cards.
 - `update-note-type-styling` validates and replaces the CSS shared by all cards
   generated from a note type.
 - `update-note-type-templates` validates and replaces selected front or back
@@ -228,6 +231,17 @@ The update tools default to `dryRun: true`. A safe design-editing workflow is:
    `expectedDesignHash`.
 3. Review the dry-run validation errors, warnings, and before/after hashes.
 4. Repeat the same update with `dryRun: false`.
+
+To create a separate design, call `clone-note-type` in dry-run mode, then
+repeat it with `dryRun: false` and the returned source design hash. The clone
+can be styled independently and used as `modelName` when creating new notes.
+AnkiConnect does not expose the source model's normal/Cloze flag, so the tool
+detects Cloze templates from `{{cloze:...}}` filters and provides an explicit
+`isCloze` override for unusual templates.
+
+The clone copies ordered field names, card template HTML, and shared CSS. It
+does not copy notes, cards, deck placement, field descriptions, editor font
+settings, or a custom sort-field selection.
 
 `expectedDesignHash` is required when `dryRun` is false. This prevents an LLM
 from overwriting a design that was changed in Anki after the LLM read it.

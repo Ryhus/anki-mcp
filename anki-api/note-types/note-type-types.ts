@@ -32,3 +32,22 @@ export type AnkiNoteTypeTemplateUpdates = Record<
 export interface AnkiNoteTypeStyling {
   css: string;
 }
+
+export interface AnkiCreateNoteTypeTemplate {
+  Name: string;
+  Front: string;
+  Back: string;
+}
+
+export interface AnkiCreateNoteTypeInput {
+  modelName: string;
+  inOrderFields: string[];
+  cardTemplates: AnkiCreateNoteTypeTemplate[];
+  css: string;
+  isCloze: boolean;
+}
+
+export interface AnkiCreatedNoteType {
+  id: number;
+  name: string;
+}

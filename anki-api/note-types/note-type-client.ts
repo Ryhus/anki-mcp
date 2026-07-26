@@ -1,11 +1,30 @@
 import { invokeAnki } from "../anki-request.js";
 import type {
+  AnkiCreatedNoteType,
+  AnkiCreateNoteTypeInput,
   AnkiNoteTypeNameMap,
   AnkiNoteTypeStyling,
   AnkiNoteTypeTemplateMap,
   AnkiNoteTypeTemplates,
   AnkiNoteTypeTemplateUpdates,
 } from "./note-type-types.js";
+
+/** Creates a new Anki note type with fields, templates, and shared CSS. */
+export function createAnkiNoteType({
+  modelName,
+  inOrderFields,
+  cardTemplates,
+  css,
+  isCloze,
+}: AnkiCreateNoteTypeInput): Promise<AnkiCreatedNoteType> {
+  return invokeAnki<AnkiCreatedNoteType>("createModel", {
+    modelName,
+    inOrderFields,
+    cardTemplates,
+    css,
+    isCloze,
+  });
+}
 
 /** Gets every Anki note type name and its numeric model ID. */
 export function getAnkiNoteTypeNameMap(): Promise<AnkiNoteTypeNameMap> {

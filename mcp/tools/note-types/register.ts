@@ -1,6 +1,10 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { withToolErrorHandling } from "../../utils/tool-handler.js";
 import {
+  cloneNoteType,
+  cloneNoteTypeConfig,
+} from "./clone-note-type.js";
+import {
   getNoteTypeDesign,
   getNoteTypeDesignConfig,
 } from "./get-note-type-design.js";
@@ -34,6 +38,11 @@ export function registerNoteTypeTools(server: McpServer): void {
     "get-note-type-design",
     getNoteTypeDesignConfig,
     withToolErrorHandling(getNoteTypeDesign),
+  );
+  server.registerTool(
+    "clone-note-type",
+    cloneNoteTypeConfig,
+    withToolErrorHandling(cloneNoteType),
   );
   server.registerTool(
     "update-note-type-styling",
