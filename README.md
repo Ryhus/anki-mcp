@@ -37,8 +37,6 @@ ANKI_URL=http://127.0.0.1:8765
 uses its usual local address; change it if your AnkiConnect instance uses a
 different host or port.
 
-The `.env` file is excluded from Git.
-
 ## Development commands
 
 ### Start the development server
@@ -49,9 +47,6 @@ npm run dev
 
 Runs the source entry point with `tsx` and watches the project for changes.
 The server is restarted automatically after a source file changes.
-
-The entry point is currently `mcp/server.js`. Change the `dev` script to
-`mcp/server.ts` after that file is migrated to TypeScript.
 
 ### Check TypeScript types
 
@@ -80,7 +75,8 @@ npm run build
 
 Compiles the application source tree with `tsconfig.build.json` into `dist/`.
 Tests are type-checked but are not included in the published build. The
-generated directory mirrors the source structure and includes source maps.
+generated directory is cleared first, then rebuilt to mirror the source
+structure and include source maps.
 
 The compiler does not write partial output when type errors are present.
 
@@ -159,7 +155,7 @@ to avoid corrupting MCP protocol messages.
 │       ├── note-type-client.ts # Typed note-type discovery and design operations
 │       └── note-type-types.ts  # AnkiConnect note-type response types
 ├── mcp/
-│   ├── server.js             # MCP server entry point
+│   ├── server.ts             # MCP server entry point
 │   ├── tools/
 │   │   ├── cards/            # Card tool contracts and handlers
 │   │   ├── decks/            # Deck tool contracts and handlers
@@ -242,9 +238,10 @@ The tools return the previous content in their change details, but do not
 create or store backup files. A recent change can be reverted with Anki Undo;
 Anki's collection backups remain the fallback for older changes.
 
-Local validation checks CSS structure, Anki field references, conditional
-sections, and potentially executable or externally loaded content. Anki still
-performs the authoritative template validation when an update is applied.
+Local validation parses CSS with `css-tree`, checks Anki field references,
+conditional sections, and potentially executable or externally loaded content.
+Anki still performs the authoritative template validation when an update is
+applied.
 
 ### Note tools
 
@@ -275,7 +272,7 @@ data-preservation rules.
    client and call them through `invokeAnki`.
 3. Define its input and output schemas with Zod.
 4. Return readable `content` and machine-readable `structuredContent`.
-5. Register the tool in its domain module or in `mcp/server`.
+5. Register the tool in its domain module or in `mcp/server.ts`.
 6. Run the type check and build:
 
 ```bash
@@ -287,18 +284,10 @@ npm run build
 Keep tool names and descriptions clear because MCP clients expose them directly
 to language models.
 
-## TypeScript migration
+## TypeScript
 
-The compiler currently has `allowJs` enabled and `checkJs` disabled. Existing
-JavaScript files are copied into `dist/`, while migrated `.ts` files receive
-strict type checking.
-
-Migrate one module at a time:
-
-1. Rename a `.js` source file to `.ts`.
-2. Add explicit types for function parameters and AnkiConnect responses.
-3. Resolve all errors reported by `npm run typecheck`.
-4. Build and test the affected MCP tools.
+All application source files use TypeScript and are checked with strict
+compiler settings. JavaScript source files are not included in the build.
 
 When using the `NodeNext` module system, keep `.js` extensions in relative
 imports inside TypeScript source files:
@@ -309,12 +298,6 @@ import { callAnki } from "../../anki-api/anki-request.js";
 
 TypeScript resolves this import to the corresponding `.ts` source file and
 preserves the `.js` extension required by Node.js in the compiled output.
-
-After every source file has been migrated:
-
-1. Update the `dev` script to use `mcp/server.ts`.
-2. Set `allowJs` to `false` in `tsconfig.json`.
-3. Run `npm run typecheck` and `npm run build`.
 
 ## Troubleshooting
 

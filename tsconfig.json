@@ -7,8 +7,7 @@
 
     "rootDir": ".",
     "outDir": "dist",
-    "allowJs": true,
-    "checkJs": false,
+    "allowJs": false,
 
     "strict": true,
     "noUncheckedIndexedAccess": true,

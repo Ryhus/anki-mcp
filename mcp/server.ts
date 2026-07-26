@@ -1,3 +1,5 @@
+#!/usr/bin/env node
+
 import "dotenv/config";
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -7,20 +9,23 @@ import { registerDeckTools } from "./tools/decks/index.js";
 import { registerNoteTypeTools } from "./tools/note-types/index.js";
 import { registerNoteTools } from "./tools/notes/index.js";
 
-const server = new McpServer({ name: "anki-mcp-server", version: "1.0.0" });
+const server = new McpServer({
+  name: "anki-mcp-server",
+  version: "0.1.0",
+});
 
 registerDeckTools(server);
 registerCardTools(server);
 registerNoteTypeTools(server);
 registerNoteTools(server);
 
-async function main() {
+async function main(): Promise<void> {
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  console.error("ANKI MCP Server running on stdio");
+  console.error("Anki MCP server running on stdio");
 }
 
-main().catch((error) => {
+void main().catch((error: unknown) => {
   console.error("Fatal error in main():", error);
-  process.exit(1);
+  process.exitCode = 1;
 });

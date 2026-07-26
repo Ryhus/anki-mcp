@@ -1,97 +1,92 @@
+import { parse, walk } from "css-tree";
+import type { CssLocation, CssNode } from "css-tree";
 import { createDesignValidation } from "./design-validation.js";
 import type {
   DesignValidation,
   DesignValidationIssue,
 } from "./shared-schemas.js";
 
-/** Performs conservative CSS structural checks without changing Anki. */
+interface SourcePosition {
+  column: number;
+  line: number;
+}
+
+/** Parses CSS without changing Anki and reports syntax and portability issues. */
 export function validateCss(css: string): DesignValidation {
   const issues: DesignValidationIssue[] = [];
-  const openingBraces: number[] = [];
-  let quote: "'" | '"' | null = null;
-  let quoteStart = -1;
-  let inComment = false;
-  let commentStart = -1;
-  let escaped = false;
+  const issueKeys = new Set<string>();
+  let referencesExternalResource = false;
+  let ast: CssNode | undefined;
 
-  for (let index = 0; index < css.length; index += 1) {
-    const character = css[index];
-    const nextCharacter = css[index + 1];
+  const addIssue = (issue: DesignValidationIssue): void => {
+    const key = `${issue.severity}:${issue.code}:${issue.path}:${issue.message}`;
 
-    if (inComment) {
-      if (character === "*" && nextCharacter === "/") {
-        inComment = false;
-        index += 1;
-      }
-      continue;
+    if (!issueKeys.has(key)) {
+      issueKeys.add(key);
+      issues.push(issue);
     }
+  };
 
-    if (quote !== null) {
-      if (escaped) {
-        escaped = false;
-      } else if (character === "\\") {
-        escaped = true;
-      } else if (character === quote) {
-        quote = null;
-      }
-      continue;
-    }
+  try {
+    ast = parse(css, {
+      positions: true,
+      onComment: (_value, location) => {
+        if (!sourceAt(css, location).endsWith("*/")) {
+          addIssue({
+            severity: "error",
+            code: "unterminated_comment",
+            path: "css",
+            message: `CSS comment starting at ${formatPosition(location.start)} is not closed.`,
+          });
+        }
+      },
+      onParseError: (error) => {
+        addIssue(createSyntaxIssue(css, error));
+      },
+    });
+  } catch (error) {
+    addIssue(createSyntaxIssue(css, error));
+  }
 
-    if (character === "/" && nextCharacter === "*") {
-      inComment = true;
-      commentStart = index;
-      index += 1;
-    } else if (character === "'" || character === '"') {
-      quote = character;
-      quoteStart = index;
-    } else if (character === "{") {
-      openingBraces.push(index);
-    } else if (character === "}") {
-      const openingBrace = openingBraces.pop();
-
-      if (openingBrace === undefined) {
-        issues.push({
+  if (ast !== undefined) {
+    walk(ast, (node) => {
+      if (
+        node.type === "Block" &&
+        node.loc !== undefined &&
+        !sourceAt(css, node.loc).endsWith("}")
+      ) {
+        addIssue({
           severity: "error",
-          code: "unexpected_closing_brace",
+          code: "unclosed_block",
           path: "css",
-          message: `Unexpected closing brace at character ${index}.`,
+          message: `CSS block starting at ${formatPosition(node.loc.start)} is not closed.`,
         });
       }
-    }
-  }
 
-  if (inComment) {
-    issues.push({
-      severity: "error",
-      code: "unterminated_comment",
-      path: "css",
-      message: `CSS comment starting at character ${commentStart} is not closed.`,
+      if (
+        node.type === "String" &&
+        node.loc !== undefined &&
+        !hasClosingQuote(sourceAt(css, node.loc))
+      ) {
+        addIssue({
+          severity: "error",
+          code: "unterminated_string",
+          path: "css",
+          message: `CSS string starting at ${formatPosition(node.loc.start)} is not closed.`,
+        });
+      }
+
+      if (
+        (node.type === "Atrule" && node.name.toLowerCase() === "import") ||
+        (node.type === "Url" && isExternalUrl(node.value))
+      ) {
+        referencesExternalResource = true;
+      }
     });
   }
 
-  if (quote !== null) {
-    issues.push({
-      severity: "error",
-      code: "unterminated_string",
-      path: "css",
-      message: `CSS string starting at character ${quoteStart} is not closed.`,
-    });
-  }
-
-  for (const openingBrace of openingBraces) {
-    issues.push({
-      severity: "error",
-      code: "unclosed_block",
-      path: "css",
-      message: `CSS block starting at character ${openingBrace} is not closed.`,
-    });
-  }
-
-  if (
-    /@import\s/i.test(css) ||
-    /url\(\s*(['"]?)(?:https?:)?\/\//i.test(css)
-  ) {
-    issues.push({
+  if (referencesExternalResource) {
+    addIssue({
       severity: "warning",
       code: "external_resource",
       path: "css",
@@ -101,4 +96,65 @@ export function validateCss(css: string): DesignValidation {
   }
 
   return createDesignValidation(issues);
+}
+
+function createSyntaxIssue(
+  css: string,
+  error: unknown,
+): DesignValidationIssue {
+  const offset = isSyntaxParseError(error) ? error.offset : 0;
+  const position = positionAt(css, offset);
+  const message =
+    error instanceof Error && error.message.length > 0
+      ? error.message
+      : "Unknown CSS syntax error";
+
+  return {
+    severity: "error",
+    code: "css_syntax_error",
+    path: "css",
+    message: `${message} at ${formatPosition(position)}.`,
+  };
+}
+
+function isSyntaxParseError(
+  error: unknown,
+): error is SyntaxError & { offset: number } {
+  return (
+    error instanceof SyntaxError &&
+    "offset" in error &&
+    typeof error.offset === "number"
+  );
+}
+
+function positionAt(css: string, offset: number): SourcePosition {
+  const safeOffset = Math.max(0, Math.min(offset, css.length));
+  const sourceBeforeOffset = css.slice(0, safeOffset);
+  const lastLineBreak = sourceBeforeOffset.lastIndexOf("\n");
+
+  return {
+    line: sourceBeforeOffset.split("\n").length,
+    column: safeOffset - lastLineBreak,
+  };
+}
+
+function formatPosition(position: SourcePosition): string {
+  return `line ${position.line}, column ${position.column}`;
+}
+
+function sourceAt(css: string, location: CssLocation): string {
+  return css.slice(location.start.offset, location.end.offset);
+}
+
+function hasClosingQuote(source: string): boolean {
+  const openingQuote = source[0];
+
+  return (
+    (openingQuote === "'" || openingQuote === '"') &&
+    source.at(-1) === openingQuote
+  );
+}
+
+function isExternalUrl(value: string): boolean {
+  return /^(?:https?:)?\/\//i.test(value.trim());
 }

@@ -59,6 +59,36 @@ test("CSS validation reports unclosed blocks and external resources", () => {
   );
 });
 
+test("CSS validation reports syntax errors recovered by css-tree", () => {
+  const validation = validateCss(".card { color red; }");
+
+  assert.equal(validation.valid, false);
+  assert.ok(
+    validation.issues.some(({ code }) => code === "css_syntax_error"),
+  );
+  assert.ok(
+    validation.issues.some(({ message }) =>
+      message.includes("line 1, column 15"),
+    ),
+  );
+});
+
+test("CSS validation reports unterminated comments and strings", () => {
+  const unterminatedComment = validateCss("/* not closed");
+  const unterminatedString = validateCss('.card { content: "not closed }');
+
+  assert.ok(
+    unterminatedComment.issues.some(
+      ({ code }) => code === "unterminated_comment",
+    ),
+  );
+  assert.ok(
+    unterminatedString.issues.some(
+      ({ code }) => code === "unterminated_string",
+    ),
+  );
+});
+
 test("template validation accepts Anki filters and conditional sections", () => {
   const validation = validateTemplateSide({
     html: "{{#Hint}}{{hint:Hint}}{{/Hint}}{{type:Front}}",
