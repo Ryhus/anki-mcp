@@ -127,7 +127,7 @@ export async function deleteMediaFile({
 
   if (!usage.scanComplete) {
     blockers.push(
-      `The collection contains ${usage.totalNoteCount} notes, but only ${usage.scannedNoteCount} were scanned; deletion requires a complete reference scan.`,
+      `Native search found ${usage.candidateNoteCount} candidate notes, but only ${usage.scannedNoteCount} were scanned; deletion requires a complete candidate reference scan.`,
     );
   }
 

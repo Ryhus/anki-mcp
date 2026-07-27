@@ -161,8 +161,15 @@ export const mediaUsageSchema = z.object({
   ),
   referencesTruncated: z.boolean(),
   totalNoteCount: z.number().int().nonnegative(),
+  candidateNoteCount: z.number().int().nonnegative(),
   scannedNoteCount: z.number().int().nonnegative(),
   scannedNoteTypeCount: z.number().int().nonnegative(),
+  scanStrategy: z.enum([
+    "native-candidates",
+    "full-scan-fallback",
+  ]),
+  nativeSearchQuery: z.string(),
+  scanFallbackReason: z.string().nullable(),
   scanComplete: z.boolean(),
 });
 

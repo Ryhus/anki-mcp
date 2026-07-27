@@ -18,6 +18,19 @@ export interface LoadedNotes {
 export async function loadNotes(noteIds: NoteId[]): Promise<LoadedNotes> {
   const requestedNoteIds = unique(noteIds);
   const rawNotes = await getAnkiNotesInfo(requestedNoteIds);
+
+  return normalizeLoadedNotes(requestedNoteIds, rawNotes);
+}
+
+/**
+ * Normalizes an already-loaded notesInfo result, including results returned
+ * inside an AnkiConnect multi response.
+ */
+export function normalizeLoadedNotes(
+  noteIds: NoteId[],
+  rawNotes: AnkiNoteInfoResult[],
+): LoadedNotes {
+  const requestedNoteIds = unique(noteIds);
   const notesById = new Map<NoteId, AnkiNoteInfo>();
 
   for (const rawNote of rawNotes) {

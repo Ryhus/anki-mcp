@@ -32,9 +32,13 @@ export async function findMediaReferences({
   filename,
 }: FindMediaReferencesInput): Promise<CallToolResult> {
   const usage = await findMediaUsage(filename);
+  const scanDescription =
+    usage.scanStrategy === "native-candidates"
+      ? `exactly inspected ${usage.scannedNoteCount} native-search candidate note${usage.scannedNoteCount === 1 ? "" : "s"} out of ${usage.totalNoteCount} total`
+      : `exactly inspected ${usage.scannedNoteCount} note${usage.scannedNoteCount === 1 ? "" : "s"} out of ${usage.totalNoteCount} total after native search fell back`;
 
   return createToolResult(
-    `Found ${usage.totalReferenceCount} reference${usage.totalReferenceCount === 1 ? "" : "s"} to "${filename}" across ${usage.scannedNoteCount} note${usage.scannedNoteCount === 1 ? "" : "s"} and ${usage.scannedNoteTypeCount} note type${usage.scannedNoteTypeCount === 1 ? "" : "s"}${usage.scanComplete ? "." : "; the note scan was incomplete because the collection exceeds the safety limit."}`,
+    `Found ${usage.totalReferenceCount} reference${usage.totalReferenceCount === 1 ? "" : "s"} to "${filename}"; ${scanDescription} and scanned ${usage.scannedNoteTypeCount} note type${usage.scannedNoteTypeCount === 1 ? "" : "s"}${usage.scanComplete ? "." : "; the candidate scan was incomplete because it exceeds the safety limit."}`,
     { usage },
   );
 }

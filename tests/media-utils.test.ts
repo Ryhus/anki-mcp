@@ -4,6 +4,7 @@ import { attachMediaToNotesConfig } from "../mcp/tools/media/attach-media-to-not
 import { deleteMediaFileConfig } from "../mcp/tools/media/delete-media-file.js";
 import { detachMediaFromNotesConfig } from "../mcp/tools/media/detach-media-from-notes.js";
 import { isPrivateIpAddress } from "../mcp/tools/media/media-source-loader.js";
+import { buildMediaReferenceCandidateQuery } from "../mcp/tools/media/media-reference-search.js";
 import {
   attachMediaReferenceToField,
   buildMediaFieldReference,
@@ -129,6 +130,20 @@ test("media references are found in CSS and fields have stable hashes", () => {
     1,
   );
   assert.equal(calculateFieldHash("<b>Hello</b>").length, 64);
+});
+
+test("media candidate queries escape filenames and include HTML entity candidates", () => {
+  const query = buildMediaReferenceCandidateQuery(
+    "broadcast (1)+copy.mp3",
+  );
+
+  assert.match(
+    query,
+    /broadcast \\\(1\\\)\\\+copy\\\.mp3/u,
+  );
+  assert.match(query, /audio\|img\|source\|video/u);
+  assert.match(query, /src/u);
+  assert.match(query, /&/u);
 });
 
 test("private and local network destinations are rejected", () => {

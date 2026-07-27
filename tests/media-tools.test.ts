@@ -169,13 +169,26 @@ test("Media tools complete store, inspect, attach, detach, and delete lifecycle"
     });
 
     const usageAfterAttach = structured<{
-      usage: { totalReferenceCount: number };
+      usage: {
+        totalReferenceCount: number;
+        candidateNoteCount: number;
+        scannedNoteCount: number;
+        totalNoteCount: number;
+        scanStrategy: string;
+      };
     }>(
       await findMediaReferences({
         filename: "cat.png",
       }),
     );
     assert.equal(usageAfterAttach.usage.totalReferenceCount, 1);
+    assert.equal(usageAfterAttach.usage.candidateNoteCount, 1);
+    assert.equal(usageAfterAttach.usage.scannedNoteCount, 1);
+    assert.equal(usageAfterAttach.usage.totalNoteCount, 1);
+    assert.equal(
+      usageAfterAttach.usage.scanStrategy,
+      "native-candidates",
+    );
 
     const detachPreview = structured<{
       changes: Array<{
@@ -243,6 +256,112 @@ test("Media tools complete store, inspect, attach, detach, and delete lifecycle"
     assert.ok(actions.includes("retrieveMediaFile"));
     assert.ok(actions.includes("updateNoteFields"));
     assert.ok(actions.includes("deleteMediaFile"));
+    assert.ok(actions.includes("multi"));
+  } finally {
+    globalThis.fetch = originalFetch;
+
+    if (originalAnkiUrl === undefined) {
+      delete process.env.ANKI_URL;
+    } else {
+      process.env.ANKI_URL = originalAnkiUrl;
+    }
+  }
+});
+
+test("Media reference scanning falls back safely when native search fails", async () => {
+  const originalFetch = globalThis.fetch;
+  const originalAnkiUrl = process.env.ANKI_URL;
+  let requestIndex = 0;
+
+  process.env.ANKI_URL = "http://127.0.0.1:8765";
+  globalThis.fetch = async (_input, init) => {
+    const request = JSON.parse(String(init?.body)) as {
+      action: string;
+      params: {
+        actions: Array<{ action: string }>;
+      };
+    };
+
+    assert.equal(request.action, "multi");
+    requestIndex += 1;
+
+    if (requestIndex === 1) {
+      return Response.json({
+        result: [
+          { result: null, error: "invalid search" },
+          { result: [1], error: null },
+          { result: {}, error: null },
+        ],
+        error: null,
+      });
+    }
+
+    if (requestIndex === 2) {
+      return Response.json({
+        result: [
+          { result: [1], error: null },
+          { result: {}, error: null },
+        ],
+        error: null,
+      });
+    }
+
+    assert.equal(requestIndex, 3);
+    assert.deepEqual(
+      request.params.actions.map(({ action }) => action),
+      ["notesInfo"],
+    );
+
+    return Response.json({
+      result: [
+        {
+          result: [
+            {
+              noteId: 1,
+              modelName: "Basic",
+              tags: [],
+              fields: {
+                Front: {
+                  value: '<img src="fallback.png">',
+                  order: 0,
+                },
+              },
+              mod: 1_700_000_000,
+              cards: [10],
+            },
+          ],
+          error: null,
+        },
+      ],
+      error: null,
+    });
+  };
+
+  try {
+    const result = structured<{
+      usage: {
+        totalReferenceCount: number;
+        candidateNoteCount: number;
+        scannedNoteCount: number;
+        scanStrategy: string;
+        scanFallbackReason: string | null;
+        scanComplete: boolean;
+      };
+    }>(
+      await findMediaReferences({
+        filename: "fallback.png",
+      }),
+    );
+
+    assert.equal(result.usage.totalReferenceCount, 1);
+    assert.equal(result.usage.candidateNoteCount, 1);
+    assert.equal(result.usage.scannedNoteCount, 1);
+    assert.equal(result.usage.scanStrategy, "full-scan-fallback");
+    assert.match(
+      result.usage.scanFallbackReason ?? "",
+      /invalid search/u,
+    );
+    assert.equal(result.usage.scanComplete, true);
   } finally {
     globalThis.fetch = originalFetch;
 
@@ -296,6 +415,29 @@ function handleMockAnkiAction(
     case "deleteMediaFile":
       media.delete(String(params.filename));
       return null;
+    case "multi":
+      return (params.actions as Array<{
+        action: string;
+        params?: Record<string, unknown>;
+      }>).map((nestedAction) => {
+        try {
+          return {
+            result: handleMockAnkiAction(
+              nestedAction.action,
+              nestedAction.params ?? {},
+              media,
+              notes,
+            ),
+            error: null,
+          };
+        } catch (error) {
+          return {
+            result: null,
+            error:
+              error instanceof Error ? error.message : String(error),
+          };
+        }
+      });
     case "findNotes":
       return [...notes.keys()];
     case "notesInfo":
