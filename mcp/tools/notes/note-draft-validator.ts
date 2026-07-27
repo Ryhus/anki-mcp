@@ -9,6 +9,12 @@ import {
   type NoteDraft,
   type NoteDraftValidation,
 } from "./shared-schemas.js";
+import { loadAnkiMediaFiles } from "../media/media-loader.js";
+import {
+  attachMediaReferenceToField,
+} from "../media/media-reference-utils.js";
+import { isAttachableMediaKind } from "../media/media-utils.js";
+import type { LoadedMediaFile } from "../media/media-loader.js";
 import { canonicalizeFields } from "./note-field-utils.js";
 import { unique } from "./note-utils.js";
 
@@ -24,9 +30,15 @@ export interface PreparedNoteDrafts {
 export async function prepareNoteDrafts(
   drafts: NoteDraft[],
 ): Promise<PreparedNoteDrafts> {
-  const [decks, noteTypes] = await Promise.all([
+  const mediaFilenames = unique(
+    drafts.flatMap(({ mediaReferences }) =>
+      mediaReferences.map(({ filename }) => filename),
+    ),
+  );
+  const [decks, noteTypes, mediaFiles] = await Promise.all([
     getDeckNameMap(),
     getAnkiNoteTypeNameMap(),
+    loadAnkiMediaFiles(mediaFilenames),
   ]);
   const existingModelNames = unique(
     drafts
@@ -44,7 +56,13 @@ export async function prepareNoteDrafts(
   );
   const fieldsByModel = new Map(fieldNameEntries);
   const preparedNotes = drafts.map((draft) =>
-    prepareDraft(draft, decks, noteTypes, fieldsByModel),
+    prepareDraft(
+      draft,
+      decks,
+      noteTypes,
+      fieldsByModel,
+      mediaFiles,
+    ),
   );
   const remotelyValidatedIndexes: number[] = [];
   const remotelyValidatedNotes: AnkiNoteDraft[] = [];
@@ -113,6 +131,7 @@ function prepareDraft(
   decks: Record<string, number>,
   noteTypes: Record<string, number>,
   fieldsByModel: Map<string, string[]>,
+  mediaFiles: Map<string, LoadedMediaFile | null>,
 ): AnkiNoteDraft | string {
   if (decks[draft.deckName] === undefined) {
     return `Deck not found: ${draft.deckName}`;
@@ -132,6 +151,50 @@ function prepareDraft(
 
   if (typeof canonicalFields === "string") {
     return canonicalFields;
+  }
+
+  const fieldsWithMedia = { ...canonicalFields };
+
+  for (const mediaReference of draft.mediaReferences) {
+    const canonicalFieldName = fieldNames.find(
+      (fieldName) =>
+        fieldName.toLowerCase() ===
+        mediaReference.fieldName.toLowerCase(),
+    );
+
+    if (canonicalFieldName === undefined) {
+      return `Media reference field is not defined by note type "${draft.modelName}": ${mediaReference.fieldName}`;
+    }
+
+    const loadedMedia = mediaFiles.get(mediaReference.filename);
+
+    if (loadedMedia === null || loadedMedia === undefined) {
+      return `Media file not found: ${mediaReference.filename}`;
+    }
+
+    if (!isAttachableMediaKind(loadedMedia.descriptor.kind)) {
+      return `Media file "${mediaReference.filename}" has kind "${loadedMedia.descriptor.kind}", which cannot be attached to a note field`;
+    }
+
+    if (!loadedMedia.descriptor.contentDetected) {
+      return `Media type could not be verified from file contents: ${mediaReference.filename}`;
+    }
+
+    if (
+      mediaReference.altText !== undefined &&
+      loadedMedia.descriptor.kind !== "image"
+    ) {
+      return `altText can be used only with image media: ${mediaReference.filename}`;
+    }
+
+    const attached = attachMediaReferenceToField(
+      fieldsWithMedia[canonicalFieldName] ?? "",
+      mediaReference.filename,
+      loadedMedia.descriptor.kind,
+      mediaReference.placement,
+      mediaReference.altText,
+    );
+    fieldsWithMedia[canonicalFieldName] = attached.value;
   }
 
   if (
@@ -154,7 +217,7 @@ function prepareDraft(
   return {
     deckName: draft.deckName,
     modelName: draft.modelName,
-    fields: canonicalFields,
+    fields: fieldsWithMedia,
     tags: unique(draft.tags),
     options: {
       allowDuplicate: draft.options.allowDuplicate,

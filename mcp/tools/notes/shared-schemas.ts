@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { noteMediaReferenceSchema } from "../media/shared-schemas.js";
 
 export const NOTE_BATCH_LIMIT = 50;
 export const NOTE_DETAILS_BATCH_LIMIT = 20;
@@ -93,6 +94,13 @@ export const noteDraftSchema = z.object({
   deckName: deckNameSchema,
   modelName: modelNameSchema,
   fields: noteFieldValuesSchema,
+  mediaReferences: z
+    .array(noteMediaReferenceSchema)
+    .max(20)
+    .default([])
+    .describe(
+      "References to media files that already exist in Anki; references are safely merged into the selected fields before validation and creation",
+    ),
   tags: noteTagListSchema.default([]),
   options: noteDraftOptionsSchema.default({
     allowDuplicate: false,

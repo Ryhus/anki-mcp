@@ -24,7 +24,7 @@ type ValidateNoteDraftsInput = z.infer<
 export const validateNoteDraftsConfig = {
   title: "Validate note drafts",
   description:
-    "Checks candidate notes without creating them. Validates decks, note types, field names, empty-card rules, and Anki duplicate rules.",
+    "Checks candidate notes without creating them. Validates decks, note types, field names, existing media references, empty-card rules, and Anki duplicate rules.",
   inputSchema: validateNoteDraftsInputSchema,
   outputSchema: z.object({
     validCount: z.number().int().nonnegative(),

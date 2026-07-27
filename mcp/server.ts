@@ -6,6 +6,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { registerCardTools } from "./tools/cards/index.js";
 import { registerDeckTools } from "./tools/decks/index.js";
+import { registerMediaTools } from "./tools/media/index.js";
 import { registerNoteTypeTools } from "./tools/note-types/index.js";
 import { registerNoteTools } from "./tools/notes/index.js";
 
@@ -18,6 +19,7 @@ registerDeckTools(server);
 registerCardTools(server);
 registerNoteTypeTools(server);
 registerNoteTools(server);
+registerMediaTools(server);
 
 async function main(): Promise<void> {
   const transport = new StdioServerTransport();

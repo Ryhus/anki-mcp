@@ -31,7 +31,7 @@ const createdNoteSchema = z.object({
 export const createNotesConfig = {
   title: "Create notes",
   description:
-    "Validates and creates one or more Anki notes. Duplicate creation is disabled by default, and successful results include generated card IDs.",
+    "Validates and creates one or more Anki notes, optionally merging references to existing Anki media into fields. Duplicate creation is disabled by default, and successful results include generated card IDs.",
   inputSchema: createNotesInputSchema,
   outputSchema: z.object({
     createdNoteCount: z.number().int().nonnegative(),

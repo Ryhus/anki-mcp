@@ -31,11 +31,19 @@ Create a `.env` file in the repository root:
 
 ```dotenv
 ANKI_URL=http://127.0.0.1:8765
+
+# Optional: ":"-separated on macOS/Linux and ";"-separated on Windows
+# ANKI_MEDIA_IMPORT_DIRS=/absolute/path/to/media
 ```
 
 `ANKI_URL` must point to the HTTP endpoint exposed by AnkiConnect. The example
 uses its usual local address; change it if your AnkiConnect instance uses a
 different host or port.
+
+`ANKI_MEDIA_IMPORT_DIRS` is optional. When set, `store-media-file` accepts
+`localPath` sources only when their resolved path is inside one of these
+directories. Local file imports are disabled when the variable is omitted.
+Base64 and public HTTPS sources do not require it.
 
 ## Development commands
 
@@ -148,6 +156,9 @@ to avoid corrupting MCP protocol messages.
 │   ├── decks/
 │   │   ├── deck-client.ts    # Typed AnkiConnect deck operations
 │   │   └── deck-types.ts     # AnkiConnect deck response types
+│   ├── media/
+│   │   ├── media-client.ts   # Typed AnkiConnect media operations
+│   │   └── media-types.ts    # AnkiConnect media request/response types
 │   ├── notes/
 │   │   ├── note-client.ts    # Typed AnkiConnect note operations
 │   │   └── note-types.ts     # AnkiConnect note response types
@@ -159,6 +170,7 @@ to avoid corrupting MCP protocol messages.
 │   ├── tools/
 │   │   ├── cards/            # Card tool contracts and handlers
 │   │   ├── decks/            # Deck tool contracts and handlers
+│   │   ├── media/            # Media storage, inspection, and reference tools
 │   │   ├── notes/            # Note tool contracts and handlers
 │   │   └── note-types/       # Note-type discovery and HTML/CSS tools
 │   └── utils/
@@ -175,6 +187,7 @@ The server currently exposes tools for:
 - listing, creating, deleting, and inspecting decks;
 - finding, inspecting, moving, suspending, and reviewing cards;
 - creating, finding, updating, tagging, and deleting notes;
+- storing, inspecting, attaching, detaching, and deleting media;
 - inspecting, cloning, and redesigning note types.
 
 ### Card tools
@@ -325,9 +338,10 @@ applied.
 - `get-note-details` returns complete ordered fields and metadata for selected
   notes.
 - `validate-note-drafts` checks decks, note types, field names, empty-card
-  rules, and duplicates without creating anything.
+  rules, existing media references, and duplicates without creating anything.
 - `create-notes` validates and creates a bounded batch, then returns both note
-  IDs and generated card IDs.
+  IDs and generated card IDs. Each draft can safely merge `mediaReferences`
+  for files that already exist in Anki.
 - `update-note-fields` applies partial field patches only after validating the
   complete batch.
 - `edit-note-tags` adds and removes selected tags without replacing unrelated
@@ -336,9 +350,59 @@ applied.
 - `delete-notes-and-cards` permanently deletes explicit note IDs and all cards
   generated from them.
 
-Media attachment, global tag replacement, unused-tag cleanup, and changing an
-existing note to another note type are intentionally deferred because they
-require additional safety and data-preservation rules.
+Global tag replacement, unused-tag cleanup, and changing an existing note to
+another note type are intentionally deferred because they require additional
+safety and data-preservation rules.
+
+### Media tools
+
+- `search-media-files` returns a sorted, bounded page of filenames matched by
+  an AnkiConnect glob pattern.
+- `get-media-file` returns verified size, MIME type, kind, and SHA-256 metadata.
+  Small images and audio can also be returned as native MCP content when the
+  client requests it.
+- `store-media-file` imports bounded image, audio, video, or font bytes from
+  base64, a public HTTPS URL, or an explicitly allowed local directory.
+  Existing files are never overwritten: the default lets Anki create a unique
+  filename, while `collisionPolicy: "reject"` refuses a collision.
+- `find-media-references` scans note fields, Card Template HTML, and note-type
+  CSS for exact references to one filename.
+- `attach-media-to-notes` appends or prepends safe `<img>` or `[sound:...]`
+  markup without replacing unrelated field HTML.
+- `detach-media-from-notes` removes exact references from selected note fields
+  without deleting the underlying file.
+- `delete-media-file` performs a complete impact scan and requires the reviewed
+  file hash, reference count, and explicit confirmation before moving a file
+  to Anki's media trash.
+
+Media mutations that change note fields default to `dryRun: true`. The dry run
+returns a SHA-256 hash of the complete current field value; pass it back as
+`expectedFieldHash` when applying the same attachment or detachment. This
+prevents an update from overwriting a field edited after the preview.
+
+The recommended note workflow is:
+
+1. Store or locate the media file.
+2. Use the exact returned filename.
+3. Attach it to existing notes, or pass it through `mediaReferences` when
+   validating and creating new notes.
+4. Use `find-media-references` before replacing or deleting an asset.
+
+Anki stores media in one flat `collection.media` folder. Static assets
+referenced directly by Card Template HTML or note-type CSS must start with an
+underscore, such as `_logo.png` or `_inter.woff2`, so Anki's media checker does
+not treat them as unused. `store-media-file` enforces this rule when
+`usage: "template-static"` is selected.
+
+URL imports accept public HTTPS destinations only, reject credentials,
+localhost and private IP addresses, follow a bounded number of redirects, and
+enforce a 25 MiB download limit. Local paths are resolved through
+`ANKI_MEDIA_IMPORT_DIRS` to prevent unrestricted filesystem access.
+
+Automatic Anki collection backups do not include media files. Media deletion
+therefore remains a destructive action even though Anki initially moves the
+file into its media trash. The delete tool refuses to apply when the collection
+is too large to complete its bounded reference scan.
 
 ## Adding an MCP tool
 
