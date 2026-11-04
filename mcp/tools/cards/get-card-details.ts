@@ -1,4 +1,4 @@
-import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
+import type { CallToolResult } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import { READ_ONLY_TOOL_ANNOTATIONS } from "../../utils/tool-annotations.js";
 import { createToolResult } from "../../utils/tool-result.js";

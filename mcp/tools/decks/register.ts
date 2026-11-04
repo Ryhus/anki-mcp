@@ -1,4 +1,4 @@
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { McpServer } from "@modelcontextprotocol/server";
 import { withToolErrorHandling } from "../../utils/tool-handler.js";
 import { createDeck, createDeckConfig } from "./create-deck.js";
 import {

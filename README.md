@@ -72,8 +72,10 @@ types or migrating a file.
 npm test
 ```
 
-Runs the unit tests for local validation and transformation logic. These tests
-do not require Anki to be running.
+Runs unit tests and MCP integration tests, including both supported protocol
+eras, JSON Schema compilation, native media content, stdio child processes,
+large requests, and shutdown. Tests use mocked AnkiConnect responses and do
+not require or modify a running Anki collection.
 
 ### Build the project
 
@@ -144,6 +146,37 @@ The server uses `stdio`, so normal application output must not be written to
 standard output. Diagnostic messages should be written with `console.error`
 to avoid corrupting MCP protocol messages.
 
+## MCP SDK and protocol compatibility
+
+The server uses MCP TypeScript SDK v2, pinned to
+`@modelcontextprotocol/server` 2.4.0. The matching
+`@modelcontextprotocol/client` package is a development dependency for tests.
+The old monolithic SDK package is no longer required. Zod is pinned to 4.6.7;
+SDK-bound schemas use Zod's Standard Schema and JSON Schema support.
+
+`mcp/create-server.ts` builds a fresh server and registers all 44 tools without
+starting a transport or contacting Anki. `mcp/stdio.ts` hosts that factory with
+`serveStdio`, serving both the `2026-07-28` revision and legacy `initialize`
+clients. Integration tests explicitly exercise `2025-11-25` and `2026-07-28`.
+The launch command and `ANKI_URL` configuration are unchanged.
+
+The SDK's default stdio read-buffer limit is 10 MB. This project sets a
+**40 MiB inbound buffer limit**, allowing a 25 MiB media file to be sent as
+roughly 33.4 MiB of base64 plus JSON overhead. This is a transport-wide limit
+for the complete buffered request, separate from each tool's input limits.
+An oversized buffer causes an error and closes the connection; reconnect with
+a smaller request. Client applications may impose smaller limits of their own.
+URL and allowed local-path media imports avoid sending the file's bytes in
+the MCP request, but retain the same 25 MiB media-file limit.
+
+When the client closes stdin, the SDK tears down the connection and the server
+exits naturally once pending work no longer keeps the process alive. `SIGINT`
+and `SIGTERM` also close the stdio handle. Closing the connection does not roll
+back Anki operations that have already been sent.
+
+See the official [SDK v2 migration guide](https://ts.sdk.modelcontextprotocol.io/v2/migration/upgrade-to-v2)
+and [stdio serving guide](https://ts.sdk.modelcontextprotocol.io/v2/serving/stdio.html).
+
 ## Project structure
 
 ```text
@@ -167,6 +200,8 @@ to avoid corrupting MCP protocol messages.
 │       └── note-type-types.ts  # AnkiConnect note-type response types
 ├── mcp/
 │   ├── server.ts             # MCP server entry point
+│   ├── create-server.ts      # Transport-independent server factory
+│   ├── stdio.ts              # Protocol compatibility, input limit, and stdio hosting
 │   ├── tools/
 │   │   ├── cards/            # Card tool contracts and handlers
 │   │   ├── decks/            # Deck tool contracts and handlers

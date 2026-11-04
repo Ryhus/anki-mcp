@@ -1,4 +1,4 @@
-import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
+import type { CallToolResult } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import { getDeckNameMap } from "../../../anki-api/decks/deck-client.js";
 import type { DeckNameMap } from "../../../anki-api/decks/deck-types.js";

@@ -1,4 +1,4 @@
-import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
+import type { CallToolResult } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import { getAnkiCardReviews } from "../../../anki-api/cards/card-client.js";
 import type { AnkiCardReview } from "../../../anki-api/cards/card-types.js";

@@ -1,7 +1,6 @@
-import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
+import type { CallToolResult, ToolAnnotations } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import { storeAnkiMediaFile } from "../../../anki-api/media/media-client.js";
-import type { ToolAnnotations } from "@modelcontextprotocol/sdk/types.js";
 import { createToolResult } from "../../utils/tool-result.js";
 import { loadAnkiMediaFile } from "./media-loader.js";
 import { loadMediaSource } from "./media-source-loader.js";

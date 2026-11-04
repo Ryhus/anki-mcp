@@ -1,4 +1,4 @@
-import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
+import type { CallToolResult } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import { updateAnkiNoteTypeTemplates } from "../../../anki-api/note-types/note-type-client.js";
 import type { AnkiNoteTypeTemplateUpdates } from "../../../anki-api/note-types/note-type-types.js";

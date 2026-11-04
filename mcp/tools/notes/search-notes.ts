@@ -1,4 +1,4 @@
-import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
+import type { CallToolResult } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import { findAnkiNotes } from "../../../anki-api/notes/note-client.js";
 import { READ_ONLY_TOOL_ANNOTATIONS } from "../../utils/tool-annotations.js";
