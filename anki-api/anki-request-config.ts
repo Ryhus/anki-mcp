@@ -4,7 +4,7 @@ export const DEFAULT_ANKI_REQUEST_TIMEOUT_MS = 30_000;
 export const MAX_ANKI_REQUEST_TIMEOUT_MS = 300_000;
 
 export interface AnkiRequestOptions {
-  /** Overrides the environment/default deadline for one complete HTTP exchange. */
+  /** Overrides the deadline for queue waiting and one complete HTTP exchange. */
   timeoutMs?: number;
   /** Optional low-level caller cancellation; MCP context is not wired here. */
   signal?: AbortSignal;

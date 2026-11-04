@@ -1,5 +1,6 @@
 import type { AnkiRequestOptions } from "./anki-request-config.js";
 import { AnkiRequestError } from "./anki-request-error.js";
+import { ankiRequestLimiter } from "./anki-request-limiter.js";
 
 const SAFE_NETWORK_CODES = new Set([
   "ECONNREFUSED", "ECONNRESET", "ENOTFOUND", "EAI_AGAIN", "ETIMEDOUT",
@@ -10,9 +11,9 @@ const SAFE_NETWORK_CODES = new Set([
 ]);
 
 /**
- * Sends exactly one POST, with no retry or redirect. The deadline includes
- * response-body loading. Racing abort also bounds non-cooperative adapters;
- * aborting the socket cannot undo a request that Anki has already received.
+ * Sends one POST with a shared concurrency permit, no retry, and no redirect.
+ * The deadline includes queue waiting and response-body loading. Aborting
+ * ends the client exchange, not work that Anki may already have received.
  */
 export async function postAnkiRequest(
   action: string,
@@ -29,6 +30,7 @@ export async function postAnkiRequest(
   let started = false;
   let completed = false;
   let response: Response | undefined;
+  let releaseSlot: (() => void) | undefined;
   let interruption: AnkiRequestError | undefined;
   const { promise: aborted, reject: rejectAbort } = Promise.withResolvers<never>();
   const interrupt = (kind: "timeout" | "cancelled"): void => {
@@ -36,8 +38,10 @@ export async function postAnkiRequest(
     interruption = new AnkiRequestError(
       kind, action,
       kind === "timeout"
-        ? `HTTP exchange timed out after ${config.timeoutMs} ms.`
-        : "HTTP exchange was cancelled.",
+        ? started
+          ? `HTTP exchange timed out after ${config.timeoutMs} ms (including any queue wait).`
+          : `Request deadline expired after ${config.timeoutMs} ms before sending, while waiting for a request slot.`
+        : started ? "HTTP exchange was cancelled." : "Request was cancelled before sending, while waiting for a request slot.",
       started, { timeoutMs: config.timeoutMs },
     );
     rejectAbort(interruption);
@@ -47,6 +51,21 @@ export async function postAnkiRequest(
   options.signal?.addEventListener("abort", onAbort, { once: true });
   const timer = setTimeout(() => interrupt("timeout"), config.timeoutMs);
   const execute = async (): Promise<unknown> => {
+    let acquired: () => void;
+    try {
+      // Avoid a microtask delay when a slot is immediately available.
+      acquired = ankiRequestLimiter.tryAcquire() ?? await ankiRequestLimiter.acquire(controller.signal);
+    } catch (error) {
+      if (interruption) throw interruption;
+      throw error;
+    }
+    // A permit can be granted just before abort, with this continuation running
+    // after the caller's finally block. Return that late permit without sending.
+    if (interruption) {
+      acquired();
+      throw interruption;
+    }
+    releaseSlot = acquired;
     try {
       started = true;
       response = await fetch(config.url, {
@@ -97,19 +116,25 @@ export async function postAnkiRequest(
     completed = true;
     return payload;
   } finally {
-    clearTimeout(timer);
-    options.signal?.removeEventListener("abort", onAbort);
-    if (!completed) {
-      controller.abort();
-      if (response) discardBody(response);
+    try {
+      clearTimeout(timer);
+      options.signal?.removeEventListener("abort", onAbort);
+      if (!completed) {
+        controller.abort();
+        if (response) discardBody(response);
+      }
+    } finally {
+      releaseSlot?.();
     }
   }
 }
 
 function discardBody(response: Response): void {
-  if (response.body && !response.body.locked) {
-    void response.body.cancel().catch(() => {});
-  }
+  try {
+    if (response.body && !response.body.locked) {
+      void response.body.cancel().catch(() => {});
+    }
+  } catch { /* Best-effort cleanup must not replace the original safe error. */ }
 }
 
 function networkError(

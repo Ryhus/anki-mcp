@@ -32,7 +32,7 @@ Create a `.env` file in the repository root:
 ```dotenv
 ANKI_URL=http://127.0.0.1:8765
 
-# Optional: full AnkiConnect HTTP request deadline (milliseconds)
+# Optional: queue wait + full AnkiConnect HTTP request deadline (milliseconds)
 # ANKI_REQUEST_TIMEOUT_MS=30000
 
 # Optional: ":"-separated on macOS/Linux and ";"-separated on Windows
@@ -46,13 +46,33 @@ different host or port.
 
 `ANKI_REQUEST_TIMEOUT_MS` is optional and defaults to **30,000 ms (30 seconds)**.
 It must be an integer from 1 to 300,000 ms; `0` does not disable the deadline.
-The deadline includes connecting, waiting for headers, and loading the JSON
-response body. As with other JavaScript timers, it cannot interrupt synchronous
-CPU work while the event loop is blocked. Each AnkiConnect HTTP request gets its
-own deadline: a tool that makes several requests can take longer overall. A
+The deadline includes waiting for a request slot, connecting, waiting for
+headers, and loading the JSON response body. It is not restarted when a slot
+becomes available. As with other JavaScript timers, it cannot interrupt
+synchronous CPU work while the event loop is blocked. Each AnkiConnect HTTP
+request gets its own deadline: a tool that makes several requests can take longer overall. A
 `multi` batch shares one HTTP deadline and is not an atomic transaction. Set the
 MCP client's tool timeout accordingly; the client may stop waiting sooner.
 This setting does not change the separate timeout for public HTTPS media downloads.
+
+All AnkiConnect HTTP calls in one Node.js process share a **four-request
+concurrency limit**, including calls from different tools or server factories.
+Excess requests wait in FIFO order; a `multi` batch uses one slot for its
+entire HTTP exchange. A slot remains held through body loading, then is
+returned on completion/failure or explicit transport abort. Timed-out and
+cancelled waiters are removed and never sent later. No extra tool parameters
+or dependencies are required, and the limit is fixed in this release.
+Cancellation here refers to a low-level request `signal`; MCP client
+cancellation is not automatically forwarded to that signal.
+
+If the deadline/cancellation occurs before sending, `AnkiRequestError` has
+`mayHaveExecuted: false` and the message states that no HTTP request was sent.
+After sending, the outcome may be unknown. This is a client-side limit, not a
+limit on Anki's background work or on other apps/processes connecting to Anki.
+Socket cleanup may be asynchronous; an adapter that ignores abort can finish
+late, but its response is discarded. A broken adapter cannot keep a slot
+forever after the client's deadline. The queue does not serialize entire MCP
+tools, create transactions, or prevent interleaving of multi-step operations.
 
 Requests are **never automatically retried**. A timeout, cancellation, or bad
 response after sending does not prove that an operation failed: Anki may have
@@ -956,7 +976,7 @@ Transport/configuration errors include a readable code:
 | --- | --- |
 | `ANKI_CONFIGURATION_ERROR` | Missing/invalid URL or timeout; no HTTP request was sent. |
 | `ANKI_INVALID_REQUEST` | Parameters cannot be serialized as JSON; no HTTP request was sent. |
-| `ANKI_TIMEOUT` | The full HTTP exchange exceeded its deadline. Check Anki responsiveness or adjust `ANKI_REQUEST_TIMEOUT_MS`. |
+| `ANKI_TIMEOUT` | Queue waiting or the HTTP exchange exceeded the request deadline. The message states whether sending had started. Check load/Anki responsiveness or adjust `ANKI_REQUEST_TIMEOUT_MS`. |
 | `ANKI_REQUEST_CANCELLED` | A low-level caller cancelled the request. The message states whether sending had started. |
 | `ANKI_NETWORK_ERROR` | Connection/TLS failure or an interrupted body. Check Anki, AnkiConnect, the endpoint, and any reported network code. |
 | `ANKI_HTTP_ERROR` | Unexpected HTTP status, including redirects. Check the direct API URL, proxy, and authentication settings. |
