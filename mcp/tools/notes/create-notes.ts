@@ -1,63 +1,63 @@
 import type { CallToolResult } from "@modelcontextprotocol/server";
-import { z } from "zod";
+import { AnkiRequestError } from "../../../anki-api/anki-request.js";
 import { createAnkiNotes } from "../../../anki-api/notes/note-client.js";
 import { NON_IDEMPOTENT_ADDITIVE_TOOL_ANNOTATIONS } from "../../utils/tool-annotations.js";
-import { createToolResult } from "../../utils/tool-result.js";
-import { prepareNoteDrafts } from "./note-draft-validator.js";
-import { loadNotes } from "./note-loader.js";
+import { prepareNoteDrafts, type PreparedNoteDrafts } from "./note-draft-validator.js";
 import {
-  NOTE_BATCH_LIMIT,
-  noteDraftSchema,
-  noteDraftValidationSchema,
-  noteIdSchema,
-} from "./shared-schemas.js";
-
-const createNotesInputSchema = z.object({
-  notes: z
-    .array(noteDraftSchema)
-    .min(1)
-    .max(NOTE_BATCH_LIMIT)
-    .describe("One or more notes to validate and create as one batch"),
-});
-
-type CreateNotesInput = z.infer<typeof createNotesInputSchema>;
-
-const createdNoteSchema = z.object({
-  inputIndex: z.number().int().nonnegative(),
-  noteId: noteIdSchema,
-  cardIds: z.array(z.number().int().positive()),
-});
+  noteCreationInputSchema,
+  noteCreationOutputSchema,
+  type NoteCreationInput,
+} from "./note-creation-schemas.js";
+import {
+  creationErrorDetail,
+  interpretNoteCreationReply,
+  noteCreationToolResult,
+  unsuccessfulNoteResults,
+} from "./note-creation-results.js";
+import { verifyCreatedNotes } from "./note-creation-verification.js";
+import { NOTE_BATCH_LIMIT, noteDraftValidationSchema } from "./shared-schemas.js";
 
 export const createNotesConfig = {
   title: "Create notes",
   description:
-    "Validates and creates one or more Anki notes, optionally merging references to existing Anki media into fields. Duplicate creation is disabled by default, and successful results include generated card IDs.",
-  inputSchema: createNotesInputSchema,
-  outputSchema: z.object({
-    createdNoteCount: z.number().int().nonnegative(),
-    createdNotes: z.array(createdNoteSchema),
-    validations: z.array(noteDraftValidationSchema),
-  }),
+    "Validates the complete batch before creating Notes, optionally merging existing media references. Returns a status for every input and preserves acknowledged IDs if readback fails. A null createdNoteCount means an unknown creation outcome; null cardIds means unverified readback. Partial/unknown outcomes are errors with structured results. Never blindly resend the whole batch; duplicate checks are not idempotency. No automatic retry or rollback.",
+  inputSchema: noteCreationInputSchema,
+  outputSchema: noteCreationOutputSchema,
   annotations: NON_IDEMPOTENT_ADDITIVE_TOOL_ANNOTATIONS,
 };
 
-/** Validates a complete batch before creating any notes. */
+/** Attempts creation once and retains evidence even when the outcome is incomplete. */
 export async function createNotes({
   notes,
-}: CreateNotesInput): Promise<CallToolResult> {
-  const prepared = await prepareNoteDrafts(notes);
+}: NoteCreationInput): Promise<CallToolResult> {
+  if (notes.length === 0 || notes.length > NOTE_BATCH_LIMIT) {
+    return noteCreationToolResult(
+      unsuccessfulNoteResults(notes.length, "not-attempted", `Use 1 to ${NOTE_BATCH_LIMIT} Notes; no creation was attempted.`), [],
+      { executionError: true },
+    );
+  }
+  let prepared: PreparedNoteDrafts;
+  try {
+    prepared = await prepareNoteDrafts(notes);
+    const validations = noteDraftValidationSchema.array().safeParse(prepared.validations);
+    if (!validations.success || validations.data.length !== notes.length ||
+      validations.data.some((validation, index) => validation.index !== index)) {
+      throw new Error("Draft validation returned malformed or misaligned results; no creation was attempted.");
+    }
+  } catch (error) {
+    return noteCreationToolResult(
+      unsuccessfulNoteResults(notes.length, "not-attempted", "Draft preparation failed before creation."), [],
+      { executionError: true, warnings: [creationErrorDetail(error)] },
+    );
+  }
   const rejected = prepared.validations.filter(
     ({ canCreate }) => !canCreate,
   );
 
   if (rejected.length > 0) {
-    return createToolResult(
-      `Created no notes because ${rejected.length} of ${notes.length} draft${notes.length === 1 ? "" : "s"} failed validation.`,
-      {
-        createdNoteCount: 0,
-        createdNotes: [],
-        validations: prepared.validations,
-      },
+    return noteCreationToolResult(
+      unsuccessfulNoteResults(notes.length, "not-attempted", "At least one draft failed validation; the whole batch was withheld."),
+      prepared.validations,
     );
   }
 
@@ -66,61 +66,35 @@ export async function createNotes({
   );
 
   if (preparedNotes.length !== notes.length) {
-    throw new Error("Validated note drafts could not be prepared");
-  }
-
-  const createdIds = await createAnkiNotes(preparedNotes);
-
-  if (createdIds.length !== notes.length) {
-    throw new Error("AnkiConnect returned misaligned created note IDs");
-  }
-
-  const existingCreatedIds = createdIds.flatMap((noteId) =>
-    noteId === null ? [] : [noteId],
-  );
-  const { notes: createdNoteInfo, missingNoteIds } =
-    await loadNotes(existingCreatedIds);
-
-  if (missingNoteIds.length > 0) {
-    throw new Error(
-      `AnkiConnect could not reload created note IDs: ${missingNoteIds.join(", ")}`,
+    return noteCreationToolResult(
+      unsuccessfulNoteResults(notes.length, "not-attempted", "Validated drafts could not be prepared consistently; no creation was attempted."),
+      prepared.validations, { executionError: true },
     );
   }
 
-  const createdInfoById = new Map(
-    createdNoteInfo.map((note) => [note.noteId, note]),
+  let reply: unknown;
+  try {
+    reply = await createAnkiNotes(preparedNotes);
+  } catch (error) {
+    const notSent = error instanceof AnkiRequestError && !error.mayHaveExecuted;
+    return noteCreationToolResult(
+      unsuccessfulNoteResults(notes.length, notSent ? "not-attempted" : "unknown",
+        notSent ? "No creation HTTP request was sent." : "The creation request failed without a trustworthy reply. Some or all Notes may already exist."),
+      prepared.validations,
+      { executionError: true, warnings: [creationErrorDetail(error)] },
+    );
+  }
+  const interpreted = interpretNoteCreationReply(reply, notes.length);
+  const { noteResults, warnings } = interpreted.valid
+    ? await verifyCreatedNotes(interpreted.noteResults, preparedNotes)
+    : { noteResults: interpreted.noteResults, warnings: ["Reported IDs from the malformed reply are unmapped and were not queried or associated with drafts. They are not safe targets for automatic cleanup."] };
+  const validations = prepared.validations.map((validation) =>
+    noteResults[validation.index]?.status === "not-created"
+      ? { ...validation, canCreate: false, error: "AnkiConnect did not create this note" }
+      : validation,
   );
-  const validations = prepared.validations.map((validation) => {
-    const createdId = createdIds[validation.index];
-
-    return createdId === null
-      ? {
-          ...validation,
-          canCreate: false,
-          error: "AnkiConnect did not create this note",
-        }
-      : validation;
-  });
-  const createdNotes = createdIds.flatMap((noteId, inputIndex) => {
-    if (noteId === null) {
-      return [];
-    }
-
-    const noteInfo = createdInfoById.get(noteId);
-
-    if (noteInfo === undefined) {
-      throw new Error(`AnkiConnect omitted created note ${noteId}`);
-    }
-
-    return [{ inputIndex, noteId, cardIds: noteInfo.cards }];
-  });
-
-  return createToolResult(
-    `Created ${createdNotes.length} of ${notes.length} requested note${notes.length === 1 ? "" : "s"}.`,
-    {
-      createdNoteCount: createdNotes.length,
-      createdNotes,
-      validations,
-    },
+  return noteCreationToolResult(
+    noteResults, validations,
+    { warnings, reportedNoteIds: interpreted.reportedNoteIds, reportedNoteIdsTruncated: interpreted.reportedNoteIdsTruncated },
   );
 }

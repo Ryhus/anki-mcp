@@ -605,8 +605,8 @@ applied.
 - `validate-note-drafts` checks decks, note types, field names, empty-card
   rules, existing media references, and duplicates without creating anything.
 - `create-notes` validates and creates a bounded batch, then returns both note
-  IDs and generated card IDs. Each draft can safely merge `mediaReferences`
-  for files that already exist in Anki.
+  IDs and generated card IDs, preserving acknowledged IDs if readback fails.
+  Each draft can safely merge `mediaReferences` for files already in Anki.
 - `update-note-fields` previews partial field patches by default, rejects stale
   field hashes before writing any note, and verifies saved values after applying.
 - `edit-note-tags` adds and removes selected tags without replacing unrelated
@@ -615,6 +615,55 @@ applied.
 - `delete-notes-and-cards` previews deletion of explicit Note IDs and all their
   generated Cards. Applying requires a reviewed impact hash and confirmation;
   native searches verify the result.
+
+#### Note creation outcomes
+
+`create-notes` keeps the existing input format and validates the entire batch
+before sending one `addNotes` request. A failed draft prevents every Note in
+that batch from being sent. Creation is not an idempotent operation or a
+transaction; validation/duplicate checks can become stale before the write.
+
+Each input has a zero-based `inputIndex` in `noteResults`:
+
+| Status | Meaning |
+| --- | --- |
+| `created` | An aligned creation reply acknowledged an ID, and readback confirmed that ID, its Note Type, and readable distinct Card IDs. |
+| `created-unverified` | Creation acknowledged an ID, but readback was missing, malformed, failed, or inconsistent. The ID is retained; `cardIds` is `null`. |
+| `not-created` | A valid aligned creation reply returned `null` for this input. |
+| `not-attempted` | The server knows `addNotes` was not sent, for example because validation failed. |
+| `unknown` | A trustworthy creation reply was not received; some or all Notes may already exist. |
+
+`outcome` summarizes the batch as `complete`, `incomplete`, `unknown`, or
+`not-attempted`. `createdNoteCount` is the exact count acknowledged by a valid
+creation reply, **not the number successfully read back**. It is `null` when
+the count is unknown; `0` is used only for known zero creation. A Note may
+disappear after its creation was acknowledged without changing that historical
+count. Existing success fields `createdNotes` and `validations` remain, and
+each `createdNotes` entry additionally includes `verified`. Normal success
+still supplies numeric counts and Card ID arrays; error results can have a
+null count and/or null Card arrays. `[]` means a readback actually reported no
+Cards; it is never substituted for unavailable data.
+
+Incomplete/unknown execution returns `isError: true` **with structured data**,
+not an exception that discards acknowledged IDs. Results are also serialized
+in a text content block so clients that ignore `structuredContent` still
+receive the evidence, following the [MCP structured-content guidance](https://modelcontextprotocol.io/specification/2025-11-25/server/tools#structured-content).
+
+Malformed, misaligned, or duplicate-ID creation replies cannot be safely
+associated with drafts. Their distinct positive integer IDs are retained only
+as `reportedNoteIds` (up to 50; `reportedNoteIdsTruncated` identifies overflow).
+These are **unmapped reports, not proof of creation or ownership**. They are
+not read back, assigned to input positions, or used for automatic cleanup.
+`validations` remains validation/rejection metadata; use `noteResults` for
+execution status. It may be empty if draft preparation itself failed.
+
+No creation retry, speculative search, or rollback is performed. Do not resend
+the whole batch after an incomplete/unknown result. Inspect acknowledged IDs
+with `get-note-details` where available, then review what actually exists
+before deciding whether to retry any inputs. A readback verifies ID/Note Type
+and Card ID data, not exact field/tag content, scheduling, or visual rendering.
+Reads, creation, and verification are not atomic and do not lock the profile
+or exclude concurrent edits.
 
 #### Safe field updates
 
