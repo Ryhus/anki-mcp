@@ -20,6 +20,10 @@ import {
 } from "./shared-schemas.js";
 import { buildMediaReferenceCandidateQuery } from "./media-reference-search.js";
 import {
+  calculateMediaReferenceFingerprint,
+  type MediaReferenceFingerprintEntry,
+} from "./media-reference-fingerprint.js";
+import {
   countMediaReferencesInCss,
   findMediaReferencesInHtml,
 } from "./media-reference-utils.js";
@@ -47,6 +51,7 @@ export interface CssMediaReference {
 
 export interface MediaUsage {
   filename: string;
+  referenceFingerprint: string | null;
   totalReferenceCount: number;
   noteReferenceCount: number;
   templateReferenceCount: number;
@@ -112,6 +117,8 @@ export async function findMediaUsage(
   const noteReferences: NoteMediaReference[] = [];
   const templateReferences: TemplateMediaReference[] = [];
   const cssReferences: CssMediaReference[] = [];
+  const fingerprintEntries: MediaReferenceFingerprintEntry[] = [];
+  let scannedNoteCount = 0;
   let noteReferenceCount = 0;
   let noteReferenceGroupCount = 0;
   let templateReferenceCount = 0;
@@ -141,6 +148,7 @@ export async function findMediaUsage(
         detailAction.noteIds,
         result as AnkiNoteInfoResult[],
       );
+      scannedNoteCount += notes.length;
 
       for (const note of notes) {
         for (const [fieldName, field] of Object.entries(note.fields)) {
@@ -155,6 +163,9 @@ export async function findMediaUsage(
 
           noteReferenceCount += occurrenceCount;
           noteReferenceGroupCount += 1;
+          fingerprintEntries.push([
+            "note", note.noteId, note.modelName, fieldName, occurrenceCount,
+          ]);
           if (noteReferences.length < MEDIA_REFERENCE_SAMPLE_LIMIT) {
             noteReferences.push({
               noteId: note.noteId,
@@ -206,6 +217,9 @@ export async function findMediaUsage(
 
         templateReferenceCount += occurrenceCount;
         templateReferenceGroupCount += 1;
+        fingerprintEntries.push([
+          "template", modelName, templateName, side, occurrenceCount,
+        ]);
         if (
           templateReferences.length < MEDIA_REFERENCE_SAMPLE_LIMIT
         ) {
@@ -227,6 +241,7 @@ export async function findMediaUsage(
     if (occurrenceCount > 0) {
       cssReferenceCount += occurrenceCount;
       cssReferenceGroupCount += 1;
+      fingerprintEntries.push(["css", modelName, occurrenceCount]);
       if (cssReferences.length < MEDIA_REFERENCE_SAMPLE_LIMIT) {
         cssReferences.push({ modelName, occurrenceCount });
       }
@@ -237,8 +252,12 @@ export async function findMediaUsage(
     noteReferenceCount +
     templateReferenceCount +
     cssReferenceCount;
+  const scanComplete = scannedNoteCount === uniqueCandidateNoteIds.length;
   return {
     filename,
+    referenceFingerprint: scanComplete
+      ? calculateMediaReferenceFingerprint(filename, fingerprintEntries)
+      : null,
     totalReferenceCount,
     noteReferenceCount,
     templateReferenceCount,
@@ -252,13 +271,12 @@ export async function findMediaUsage(
       cssReferences.length < cssReferenceGroupCount,
     totalNoteCount: scope.allNoteIds.length,
     candidateNoteCount: uniqueCandidateNoteIds.length,
-    scannedNoteCount: scannedNoteIds.length,
+    scannedNoteCount,
     scannedNoteTypeCount: modelNames.length,
     scanStrategy: scope.scanStrategy,
     nativeSearchQuery: scope.nativeSearchQuery,
     scanFallbackReason: scope.scanFallbackReason,
-    scanComplete:
-      scannedNoteIds.length === uniqueCandidateNoteIds.length,
+    scanComplete,
   };
 }
 

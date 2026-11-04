@@ -19,7 +19,7 @@ type FindMediaReferencesInput = z.infer<
 export const findMediaReferencesConfig = {
   title: "Find media references",
   description:
-    "Scans note fields, Card Template HTML, and note-type CSS for exact references to one Anki media filename.",
+    "Scans note fields, Card Template HTML, and note-type CSS for exact references to one Anki media filename. Complete scans return a fingerprint of all detected reference locations and counts for safe deletion.",
   inputSchema: findMediaReferencesInputSchema,
   outputSchema: z.object({
     usage: mediaUsageSchema,
@@ -38,7 +38,7 @@ export async function findMediaReferences({
       : `exactly inspected ${usage.scannedNoteCount} note${usage.scannedNoteCount === 1 ? "" : "s"} out of ${usage.totalNoteCount} total after native search fell back`;
 
   return createToolResult(
-    `Found ${usage.totalReferenceCount} reference${usage.totalReferenceCount === 1 ? "" : "s"} to "${filename}"; ${scanDescription} and scanned ${usage.scannedNoteTypeCount} note type${usage.scannedNoteTypeCount === 1 ? "" : "s"}${usage.scanComplete ? "." : "; the candidate scan was incomplete because it exceeds the safety limit."}`,
+    `Found ${usage.totalReferenceCount} reference${usage.totalReferenceCount === 1 ? "" : "s"} to "${filename}"; ${scanDescription} and scanned ${usage.scannedNoteTypeCount} note type${usage.scannedNoteTypeCount === 1 ? "" : "s"}${usage.scanComplete ? "." : "; the candidate scan was incomplete because it exceeds the safety limit or some notes could not be loaded."}`,
     { usage },
   );
 }

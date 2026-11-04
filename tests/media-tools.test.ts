@@ -226,7 +226,7 @@ test("Media tools complete store, inspect, attach, detach, and delete lifecycle"
 
     const deletePreview = structured<{
       file: { sha256: string };
-      usage: { totalReferenceCount: number };
+      usage: { totalReferenceCount: number; referenceFingerprint: string };
     }>(
       await deleteMediaFile({
         filename: "cat.png",
@@ -245,6 +245,8 @@ test("Media tools complete store, inspect, attach, detach, and delete lifecycle"
         expectedSha256: deletePreview.file.sha256,
         expectedReferenceCount:
           deletePreview.usage.totalReferenceCount,
+        expectedReferenceFingerprint:
+          deletePreview.usage.referenceFingerprint,
         confirmDeletion: true,
         confirmBrokenReferences: false,
       }),

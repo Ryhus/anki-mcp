@@ -133,6 +133,9 @@ export const expectedFieldHashSchema = mediaSha256Schema.describe(
 
 export const mediaUsageSchema = z.object({
   filename: z.string(),
+  referenceFingerprint: mediaSha256Schema.nullable().describe(
+    "SHA-256 of every detected reference location and occurrence count before sampling; null when the scan is incomplete",
+  ),
   totalReferenceCount: z.number().int().nonnegative(),
   noteReferenceCount: z.number().int().nonnegative(),
   templateReferenceCount: z.number().int().nonnegative(),

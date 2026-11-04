@@ -214,6 +214,7 @@ test("media mutation schemas require reviewed hashes and confirmations", () => {
       dryRun: false,
       expectedSha256: hash,
       expectedReferenceCount: 0,
+      expectedReferenceFingerprint: hash,
       confirmDeletion: true,
     });
   const staticWithoutUnderscore =

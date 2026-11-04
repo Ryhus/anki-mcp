@@ -464,19 +464,44 @@ safety and data-preservation rules.
   Existing files are never overwritten: the default lets Anki create a unique
   filename, while `collisionPolicy: "reject"` refuses a collision.
 - `find-media-references` scans note fields, Card Template HTML, and note-type
-  CSS for exact references to one filename.
+  CSS for exact references to one filename, returning a reference fingerprint
+  when the scan is complete.
 - `attach-media-to-notes` appends or prepends safe `<img>` or `[sound:...]`
   markup without replacing unrelated field HTML.
 - `detach-media-from-notes` removes exact references from selected note fields
   without deleting the underlying file.
 - `delete-media-file` performs a complete impact scan and requires the reviewed
-  file hash, reference count, and explicit confirmation before moving a file
-  to Anki's media trash.
+  file hash, reference count, reference fingerprint, and explicit confirmation
+  before moving a file to Anki's media trash.
 
 Media mutations that change note fields default to `dryRun: true`. The dry run
 returns a SHA-256 hash of the complete current field value; pass it back as
 `expectedFieldHash` when applying the same attachment or detachment. This
 prevents an update from overwriting a field edited after the preview.
+
+For deletion, first call `delete-media-file` with `dryRun: true` (the default).
+Review its file metadata, reference locations, blockers, and warnings. To apply,
+pass `dryRun: false`, `confirmDeletion: true`, and the preview's values:
+
+- `file.sha256` as `expectedSha256`;
+- `usage.totalReferenceCount` as `expectedReferenceCount`;
+- `usage.referenceFingerprint` as `expectedReferenceFingerprint`.
+
+If references remain, `confirmBrokenReferences: true` is also required. Applying
+without the reference fingerprint is no longer accepted. The fingerprint
+includes the filename and every detected reference's Note/field, template/side,
+or CSS owner and occurrence count. Moving a reference can therefore block
+deletion even when the total count stays unchanged. Scan order and unrelated
+surrounding HTML do not affect it.
+
+The fingerprint covers all detected locations **before** the response samples
+are truncated. `referencesTruncated: true` limits the displayed detail, not hash
+coverage. An incomplete scan (including missing `notesInfo` results) returns
+`referenceFingerprint: null` and blocks deletion. Fingerprinting adds local
+hashing, not extra AnkiConnect requests, and stores no backup or history.
+These checks are not an atomic Anki transaction: a concurrent edit between the
+final scan and deletion is still possible. Dynamically generated references
+outside the scanner's detectable HTML/CSS syntax are not covered.
 
 The recommended note workflow is:
 
@@ -499,8 +524,9 @@ enforce a 25 MiB download limit. Local paths are resolved through
 
 Automatic Anki collection backups do not include media files. Media deletion
 therefore remains a destructive action even though Anki initially moves the
-file into its media trash. The delete tool refuses to apply when the collection
-is too large to complete its bounded reference scan.
+file into its media trash. The delete tool refuses to apply when the candidate
+set is too large to complete its bounded reference scan or some candidates
+cannot be loaded.
 
 ## Adding an MCP tool
 

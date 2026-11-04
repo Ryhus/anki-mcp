@@ -34,6 +34,11 @@ const deleteMediaFileInputSchema = z
       .describe(
         "Reference count returned by the dry run; required when applying",
       ),
+    expectedReferenceFingerprint: mediaSha256Schema
+      .optional()
+      .describe(
+        "usage.referenceFingerprint returned by a complete dry run; required when applying, even if the reference count is unchanged",
+      ),
     confirmDeletion: z
       .boolean()
       .default(false)
@@ -51,6 +56,7 @@ const deleteMediaFileInputSchema = z
         dryRun,
         expectedSha256,
         expectedReferenceCount,
+        expectedReferenceFingerprint,
         confirmDeletion,
       },
       context,
@@ -81,6 +87,14 @@ const deleteMediaFileInputSchema = z
           message: "confirmDeletion must be true when dryRun is false",
         });
       }
+      if (expectedReferenceFingerprint === undefined) {
+        context.addIssue({
+          code: "custom",
+          path: ["expectedReferenceFingerprint"],
+          message:
+            "expectedReferenceFingerprint is required when dryRun is false",
+        });
+      }
     },
   );
 
@@ -91,7 +105,7 @@ type DeleteMediaFileInput = z.infer<
 export const deleteMediaFileConfig = {
   title: "Delete media file",
   description:
-    "Previews exact Note, Card Template, and CSS references before moving one media file to Anki's media trash. Applying requires reviewed hashes and explicit confirmation.",
+    "Previews exact Note, Card Template, and CSS references before moving one media file to Anki's media trash. Applying requires the reviewed file hash, reference count, reference fingerprint, and explicit confirmation.",
   inputSchema: deleteMediaFileInputSchema,
   outputSchema: z.object({
     filename: z.string(),
@@ -112,6 +126,7 @@ export async function deleteMediaFile({
   dryRun,
   expectedSha256,
   expectedReferenceCount,
+  expectedReferenceFingerprint,
   confirmDeletion: _confirmDeletion,
   confirmBrokenReferences,
 }: DeleteMediaFileInput): Promise<CallToolResult> {
@@ -147,6 +162,15 @@ export async function deleteMediaFile({
   ) {
     blockers.push(
       `The reference count changed from ${expectedReferenceCount} to ${usage.totalReferenceCount}; run the dry run again.`,
+    );
+  }
+
+  if (
+    expectedReferenceFingerprint !== undefined &&
+    expectedReferenceFingerprint !== usage.referenceFingerprint
+  ) {
+    blockers.push(
+      "The reference fingerprint changed or is unavailable; references may have moved or changed after the dry run. Inspect them again before deleting.",
     );
   }
 
