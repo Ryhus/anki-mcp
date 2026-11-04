@@ -561,12 +561,40 @@ surrounding HTML do not affect it.
 
 The fingerprint covers all detected locations **before** the response samples
 are truncated. `referencesTruncated: true` limits the displayed detail, not hash
-coverage. An incomplete scan (including missing `notesInfo` results) returns
-`referenceFingerprint: null` and blocks deletion. Fingerprinting adds local
-hashing, not extra AnkiConnect requests, and stores no backup or history.
+coverage. An incomplete scan (including missing `notesInfo` results or CSS scan
+failures) returns `referenceFingerprint: null` and blocks deletion. Fingerprinting
+adds local hashing, not extra AnkiConnect requests, and stores no backup or history.
 These checks are not an atomic Anki transaction: a concurrent edit between the
 final scan and deletion is still possible. Dynamically generated references
 outside the scanner's detectable HTML/CSS syntax are not covered.
+
+CSS scan failures are reported separately in `usage.cssScanFailureCount` and
+`usage.cssScanFailures`. The latter contains the first diagnostic (with source
+line/column) per affected Note Type, sampled to 100 Note Types. Compare its
+length with `cssScanFailureCount` to detect truncated diagnostics. Known
+references are still returned, but counts may omit references when
+`scanComplete: false`; zero detected references is not proof of no usage.
+
+The scanner checks recovered parser errors, opaque/unparsed content, and
+unmatched or unterminated blocks, functions, strings, URLs, and comments. It
+also parses custom-property values so `--background: url("image.png")` is
+inspected. Even browser-tolerated EOF recovery or syntax unsupported by the
+parser makes a scan incomplete. One failing Note Type blocks media deletion,
+even when the target filename was not found in its CSS. Neither
+`confirmDeletion` nor `confirmBrokenReferences` bypasses this check.
+Speculative parser retries that successfully produce fully parsed syntax
+(such as nested `@supports` conditions) do not count as failures.
+
+Inspect the reported CSS issue with the user before changing any Note Type;
+do not automatically rewrite unrelated styling just to unblock deletion.
+After resolving the issue or adding parser support, obtain a fresh complete
+preview. CSS is not rewritten by scanning, and these checks add no AnkiConnect
+requests. The parser's tolerant recovery behavior is described in the
+[css-tree parsing documentation](https://github.com/csstree/csstree/blob/master/docs/parsing.md#onparseerror).
+CSS matching is limited to direct `url(...)` occurrences in shared Note Type
+styles; it does not follow imported stylesheets or evaluate browser runtime
+behavior. A complete scan is not a guarantee that every possible reference
+syntax is supported.
 
 The recommended note workflow is:
 
@@ -591,7 +619,7 @@ Automatic Anki collection backups do not include media files. Media deletion
 therefore remains a destructive action even though Anki initially moves the
 file into its media trash. The delete tool refuses to apply when the candidate
 set is too large to complete its bounded reference scan or some candidates
-cannot be loaded.
+cannot be loaded, or if shared Note Type CSS cannot be fully inspected.
 
 ## Adding an MCP tool
 

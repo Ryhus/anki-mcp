@@ -188,6 +188,83 @@ test("bounded partial scans never expose a usable fingerprint", async (t) => {
   assert.equal(usage.referenceFingerprint, null);
 });
 
+test("CSS failures suppress fingerprints while preserving known Note and template references", async (t) => {
+  const anki = mockMedia(t);
+  anki.notes.set(1, note(1, { Front: IMAGE }));
+  anki.models.set("Basic", {
+    templates: { "Card 1": { Front: IMAGE, Back: "" } },
+    css: `.card { broken; background: url("${FILENAME}"); }`,
+  });
+  const usage = await findMediaUsage(FILENAME);
+  assert.equal(usage.scannedNoteCount, usage.candidateNoteCount);
+  assert.equal(usage.scannedNoteTypeCount, 1);
+  assert.equal(usage.scanComplete, false);
+  assert.equal(usage.referenceFingerprint, null);
+  assert.equal(usage.noteReferenceCount, 1);
+  assert.equal(usage.templateReferenceCount, 1);
+  assert.equal(usage.cssReferenceCount, 1);
+  assert.equal(usage.totalReferenceCount, 3);
+  assert.equal(usage.cssScanFailureCount, 1);
+  assert.equal(usage.cssScanFailures[0]?.modelName, "Basic");
+  assert.match(usage.cssScanFailures[0]?.error ?? "", /line 1, column/u);
+  assert.deepEqual(anki.requests, ["multi", "multi"]);
+});
+
+test("CSS parse failure alone blocks deletion even with both confirmations and zero detected references", async (t) => {
+  const anki = mockMedia(t);
+  const preview = await inspectDeletion();
+  anki.models.set("Basic", { templates: {}, css: "/* unterminated" });
+  const result = await applyPreview(preview);
+  assert.equal(result.usage.totalReferenceCount, 0);
+  assert.equal(result.usage.scannedNoteCount, result.usage.candidateNoteCount);
+  assert.equal(result.usage.cssScanFailureCount, 1);
+  assertFingerprintBlocked(result, anki);
+  assert.match(result.blockers.join(" "), /complete CSS reference scan/u);
+});
+
+test("CSS failure diagnostics are bounded without incorrectly completing a scan", async (t) => {
+  const anki = mockMedia(t);
+  anki.models.clear();
+  for (let index = 0; index < 101; index += 1) {
+    anki.models.set(`Broken ${index}`, { templates: {}, css: ".x { broken; }" });
+  }
+  const usage = await findMediaUsage(FILENAME);
+  assert.equal(usage.cssScanFailureCount, 101);
+  assert.equal(usage.cssScanFailures.length, 100);
+  assert.equal(usage.scanComplete, false);
+  assert.equal(usage.referenceFingerprint, null);
+});
+
+test("valid CSS yields fingerprints, including references inside custom properties", async (t) => {
+  const anki = mockMedia(t);
+  anki.models.set("Basic", { templates: {}, css: `:root { --image: url("${FILENAME}"); }` });
+  const usage = await findMediaUsage(FILENAME);
+  assert.equal(usage.cssReferenceCount, 1);
+  assert.equal(usage.scanComplete, true);
+  assert.equal(usage.cssScanFailureCount, 0);
+  assert.deepEqual(usage.cssScanFailures, []);
+  assert.equal(usage.referenceFingerprint, calculateMediaReferenceFingerprint(FILENAME, [["css", "Basic", 1]]));
+});
+
+test("a fresh complete scan after CSS repair allows reviewed deletion without rewriting CSS", async (t) => {
+  const anki = mockMedia(t);
+  const brokenCss = ".card { broken; }";
+  anki.models.set("Basic", { templates: {}, css: brokenCss });
+  const blocked = await inspectDeletion();
+  assert.equal(blocked.usage.scanComplete, false);
+  assert.equal(blocked.usage.referenceFingerprint, null);
+  assert.equal(anki.models.get("Basic")?.css, brokenCss);
+  assert.equal(anki.deleteCalls, 0);
+  anki.models.set("Basic", { templates: {}, css: ".card { color: black; }" });
+  const reviewed = await inspectDeletion();
+  assert.equal(reviewed.usage.scanComplete, true);
+  assert.equal(reviewed.usage.cssScanFailureCount, 0);
+  assert.deepEqual(reviewed.usage.cssScanFailures, []);
+  const result = await applyPreview(reviewed, false);
+  assert.equal(result.applied, true);
+  assert.equal(anki.deleteCalls, 1);
+});
+
 test("a fresh fingerprint permits confirmed deletion but does not bypass broken-reference confirmation", async (t) => {
   const anki = mockMedia(t);
   anki.notes.set(1, note(1, { Front: IMAGE }));
@@ -244,6 +321,39 @@ for (const version of ["2025-11-25", "2026-07-28"] as const) {
     })).structuredContent);
     assert.equal(fresh.applied, true);
     assert.equal(anki.deleteCalls, 1);
+  });
+
+  test(`MCP ${version} reports incomplete CSS scans and blocks confirmed deletion`, async (t) => {
+    const anki = mockMedia(t);
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    const handle = serveStdio(createServer, { transport: serverTransport });
+    const client = new Client({ name: "media-css-failure-test", version: "0.0.0" }, {
+      supportedProtocolVersions: [version],
+      versionNegotiation: { mode: version === "2026-07-28" ? { pin: version } : "legacy" },
+    });
+    t.after(async () => { await client.close(); await handle.close(); });
+    await client.connect(clientTransport);
+    const preview = deleteMediaFileConfig.outputSchema.parse((await client.callTool({
+      name: "delete-media-file", arguments: { filename: FILENAME },
+    })).structuredContent);
+    assert.ok(preview.file);
+    anki.models.set("Basic", { templates: {}, css: "/* no closing comment" });
+    const response = await client.callTool({ name: "find-media-references", arguments: { filename: FILENAME } });
+    const references = findMediaReferencesConfig.outputSchema.parse(response.structuredContent);
+    assert.equal(references.usage.scanComplete, false);
+    assert.equal(references.usage.referenceFingerprint, null);
+    assert.equal(references.usage.cssScanFailureCount, 1);
+    assert.equal(references.usage.cssScanFailures[0]?.modelName, "Basic");
+    assert.match(JSON.stringify(response.content), /at least 0.*incomplete.*CSS/u);
+    const deleted = deleteMediaFileConfig.outputSchema.parse((await client.callTool({
+      name: "delete-media-file", arguments: {
+        filename: FILENAME, dryRun: false, expectedSha256: preview.file.sha256,
+        expectedReferenceCount: 0, expectedReferenceFingerprint: preview.usage.referenceFingerprint,
+        confirmDeletion: true, confirmBrokenReferences: true,
+      },
+    })).structuredContent);
+    assert.match(deleted.blockers.join(" "), /complete CSS reference scan/u);
+    assertFingerprintBlocked(deleted, anki);
   });
 }
 

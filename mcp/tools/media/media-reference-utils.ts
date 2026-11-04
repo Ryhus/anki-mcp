@@ -1,4 +1,3 @@
-import { parse, walk } from "css-tree";
 import { parseFragment } from "parse5";
 import type { DefaultTreeAdapterTypes } from "parse5";
 import type { MediaKind } from "./media-utils.js";
@@ -148,31 +147,6 @@ export function removeMediaReferencesFromField(
     value: updatedValue,
     removedReferenceCount: matches.length,
   };
-}
-
-/** Counts exact url(...) references in shared note-type CSS. */
-export function countMediaReferencesInCss(
-  css: string,
-  filename: string,
-): number {
-  let count = 0;
-
-  try {
-    const ast = parse(css);
-
-    walk(ast, (node) => {
-      if (
-        node.type === "Url" &&
-        normalizeMediaReference(node.value) === filename
-      ) {
-        count += 1;
-      }
-    });
-  } catch {
-    return 0;
-  }
-
-  return count;
 }
 
 export function calculateFieldHash(value: string): string {

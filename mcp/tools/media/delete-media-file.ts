@@ -105,7 +105,7 @@ type DeleteMediaFileInput = z.infer<
 export const deleteMediaFileConfig = {
   title: "Delete media file",
   description:
-    "Previews exact Note, Card Template, and CSS references before moving one media file to Anki's media trash. Applying requires the reviewed file hash, reference count, reference fingerprint, and explicit confirmation.",
+    "Previews exact Note, Card Template, and CSS references before moving one media file to Anki's media trash. Applying requires the reviewed file hash, reference count, reference fingerprint, and explicit confirmation. Incomplete Note or CSS scans block deletion even with confirmations enabled.",
   inputSchema: deleteMediaFileInputSchema,
   outputSchema: z.object({
     filename: z.string(),
@@ -140,10 +140,18 @@ export async function deleteMediaFile({
     "Deleting or breaking references can propagate to other devices during media synchronization.",
   ];
 
-  if (!usage.scanComplete) {
+  if (usage.scannedNoteCount < usage.candidateNoteCount) {
     blockers.push(
       `Native search found ${usage.candidateNoteCount} candidate notes, but only ${usage.scannedNoteCount} were scanned; deletion requires a complete candidate reference scan.`,
     );
+  }
+  if (usage.cssScanFailureCount > 0) {
+    blockers.push(
+      `CSS could not be fully inspected for ${usage.cssScanFailureCount} note type${usage.cssScanFailureCount === 1 ? "" : "s"}; deletion requires a complete CSS reference scan. See usage.cssScanFailures.`,
+    );
+  }
+  if (!usage.scanComplete && blockers.length === 0) {
+    blockers.push("Deletion requires a complete reference scan.");
   }
 
   if (

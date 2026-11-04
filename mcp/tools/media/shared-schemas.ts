@@ -136,10 +136,21 @@ export const mediaUsageSchema = z.object({
   referenceFingerprint: mediaSha256Schema.nullable().describe(
     "SHA-256 of every detected reference location and occurrence count before sampling; null when the scan is incomplete",
   ),
-  totalReferenceCount: z.number().int().nonnegative(),
+  totalReferenceCount: z.number().int().nonnegative().describe(
+    "Detected occurrences; may omit references when scanComplete is false",
+  ),
   noteReferenceCount: z.number().int().nonnegative(),
   templateReferenceCount: z.number().int().nonnegative(),
   cssReferenceCount: z.number().int().nonnegative(),
+  cssScanFailureCount: z.number().int().nonnegative().describe(
+    "Number of note types whose shared CSS could not be fully inspected",
+  ),
+  cssScanFailures: z.array(z.object({
+    modelName: z.string(),
+    error: z.string(),
+  })).max(MEDIA_REFERENCE_SAMPLE_LIMIT).describe(
+    `First CSS scan failure per note type, limited to ${MEDIA_REFERENCE_SAMPLE_LIMIT} note types; compare length with cssScanFailureCount for truncation`,
+  ),
   noteReferences: z.array(
     z.object({
       noteId: z.number().int().positive(),

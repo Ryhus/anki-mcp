@@ -23,10 +23,8 @@ import {
   calculateMediaReferenceFingerprint,
   type MediaReferenceFingerprintEntry,
 } from "./media-reference-fingerprint.js";
-import {
-  countMediaReferencesInCss,
-  findMediaReferencesInHtml,
-} from "./media-reference-utils.js";
+import { findMediaReferencesInHtml } from "./media-reference-utils.js";
+import { scanMediaReferencesInCss } from "./media-css-reference-scanner.js";
 
 const NOTE_INFO_BATCH_SIZE = 250;
 
@@ -49,6 +47,11 @@ export interface CssMediaReference {
   occurrenceCount: number;
 }
 
+export interface CssMediaScanFailure {
+  modelName: string;
+  error: string;
+}
+
 export interface MediaUsage {
   filename: string;
   referenceFingerprint: string | null;
@@ -56,6 +59,8 @@ export interface MediaUsage {
   noteReferenceCount: number;
   templateReferenceCount: number;
   cssReferenceCount: number;
+  cssScanFailureCount: number;
+  cssScanFailures: CssMediaScanFailure[];
   noteReferences: NoteMediaReference[];
   templateReferences: TemplateMediaReference[];
   cssReferences: CssMediaReference[];
@@ -117,6 +122,8 @@ export async function findMediaUsage(
   const noteReferences: NoteMediaReference[] = [];
   const templateReferences: TemplateMediaReference[] = [];
   const cssReferences: CssMediaReference[] = [];
+  const cssScanFailures: CssMediaScanFailure[] = [];
+  let cssScanFailureCount = 0;
   const fingerprintEntries: MediaReferenceFingerprintEntry[] = [];
   let scannedNoteCount = 0;
   let noteReferenceCount = 0;
@@ -233,10 +240,17 @@ export async function findMediaUsage(
       }
     }
 
-    const occurrenceCount = countMediaReferencesInCss(
+    const cssScan = scanMediaReferencesInCss(
       styling.css,
       filename,
     );
+    const { occurrenceCount } = cssScan;
+    if (cssScan.error !== null) {
+      cssScanFailureCount += 1;
+      if (cssScanFailures.length < MEDIA_REFERENCE_SAMPLE_LIMIT) {
+        cssScanFailures.push({ modelName, error: cssScan.error });
+      }
+    }
 
     if (occurrenceCount > 0) {
       cssReferenceCount += occurrenceCount;
@@ -252,7 +266,8 @@ export async function findMediaUsage(
     noteReferenceCount +
     templateReferenceCount +
     cssReferenceCount;
-  const scanComplete = scannedNoteCount === uniqueCandidateNoteIds.length;
+  const scanComplete =
+    scannedNoteCount === uniqueCandidateNoteIds.length && cssScanFailureCount === 0;
   return {
     filename,
     referenceFingerprint: scanComplete
@@ -262,6 +277,8 @@ export async function findMediaUsage(
     noteReferenceCount,
     templateReferenceCount,
     cssReferenceCount,
+    cssScanFailureCount,
+    cssScanFailures,
     noteReferences,
     templateReferences,
     cssReferences,

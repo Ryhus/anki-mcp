@@ -9,10 +9,10 @@ import {
   attachMediaReferenceToField,
   buildMediaFieldReference,
   calculateFieldHash,
-  countMediaReferencesInCss,
   findMediaReferencesInHtml,
   removeMediaReferencesFromField,
 } from "../mcp/tools/media/media-reference-utils.js";
+import { scanMediaReferencesInCss } from "../mcp/tools/media/media-css-reference-scanner.js";
 import {
   decodeBase64,
   describeMediaFile,
@@ -122,12 +122,12 @@ test("media field references preserve unrelated HTML", () => {
 });
 
 test("media references are found in CSS and fields have stable hashes", () => {
-  assert.equal(
-    countMediaReferencesInCss(
+  assert.deepEqual(
+    scanMediaReferencesInCss(
       '@font-face { src: url("_font.woff2"); } .x { background: url(other.png) }',
       "_font.woff2",
     ),
-    1,
+    { occurrenceCount: 1, error: null },
   );
   assert.equal(calculateFieldHash("<b>Hello</b>").length, 64);
 });
