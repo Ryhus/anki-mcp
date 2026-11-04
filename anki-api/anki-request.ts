@@ -1,3 +1,14 @@
+import { postAnkiRequest } from "./anki-http-client.js";
+import {
+  resolveAnkiRequestConfig,
+  type AnkiRequestOptions,
+} from "./anki-request-config.js";
+import { AnkiRequestError } from "./anki-request-error.js";
+
+export { AnkiRequestError } from "./anki-request-error.js";
+export type { AnkiRequestErrorKind } from "./anki-request-error.js";
+export type { AnkiRequestOptions } from "./anki-request-config.js";
+
 const ANKI_CONNECT_VERSION = 6;
 
 export type AnkiRequestParams = Record<string, unknown>;
@@ -37,44 +48,39 @@ export class AnkiMultiActionError extends Error {
 }
 
 function isAnkiResponse(value: unknown): value is AnkiResponse {
-  if (typeof value !== "object" || value === null) {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
     return false;
   }
 
   return (
-    "result" in value &&
-    "error" in value &&
+    Object.hasOwn(value, "result") &&
+    Object.hasOwn(value, "error") && "error" in value &&
     (typeof value.error === "string" || value.error === null)
   );
 }
 
+/** Sends one bounded request and validates the AnkiConnect response envelope. */
 export async function callAnki<TResult = unknown>(
   action: string,
   params?: AnkiRequestParams,
+  options: AnkiRequestOptions = {},
 ): Promise<AnkiResponse<TResult>> {
-  const ankiUrl = process.env.ANKI_URL;
-
-  if (ankiUrl === undefined) {
-    throw new Error("ANKI_URL environment variable is not set");
+  const config = resolveAnkiRequestConfig(action, options);
+  let body: string;
+  try {
+    body = JSON.stringify({ action, version: ANKI_CONNECT_VERSION, params });
+  } catch {
+    throw new AnkiRequestError(
+      "invalid-request", action,
+      "Request parameters could not be serialized as JSON.", false,
+    );
   }
-
-  const response = await fetch(ankiUrl, {
-    method: "POST",
-    body: JSON.stringify({
-      action,
-      version: ANKI_CONNECT_VERSION,
-      params,
-    }),
-  });
-
-  if (!response.ok) {
-    throw new Error(`AnkiConnect request failed with status ${response.status}`);
-  }
-
-  const payload: unknown = await response.json();
-
+  const payload = await postAnkiRequest(action, body, config, options);
   if (!isAnkiResponse(payload)) {
-    throw new Error("AnkiConnect returned an invalid response");
+    throw new AnkiRequestError(
+      "invalid-response", action,
+      "The endpoint returned an invalid AnkiConnect response envelope (expected result and error).", true,
+    );
   }
 
   return payload as AnkiResponse<TResult>;
@@ -83,13 +89,15 @@ export async function callAnki<TResult = unknown>(
 /**
  * Calls an AnkiConnect action and unwraps its result.
  *
- * @throws When AnkiConnect reports an action-level error.
+ * @throws AnkiRequestError for configuration/transport failures, or Error when
+ * AnkiConnect reports an action-level error. Requests are never retried here.
  */
 export async function invokeAnki<TResult = unknown>(
   action: string,
   params?: AnkiRequestParams,
+  options: AnkiRequestOptions = {},
 ): Promise<TResult> {
-  const { result, error } = await callAnki<TResult>(action, params);
+  const { result, error } = await callAnki<TResult>(action, params, options);
 
   if (error !== null) {
     throw new Error(`AnkiConnect action "${action}" failed: ${error}`);
@@ -114,7 +122,10 @@ export function createAnkiAction<TResult>(
  */
 export async function invokeAnkiMulti<
   const TActions extends readonly AnkiAction[],
->(actions: TActions): Promise<AnkiMultiResults<TActions>> {
+>(
+  actions: TActions,
+  options: AnkiRequestOptions = {},
+): Promise<AnkiMultiResults<TActions>> {
   if (actions.length === 0) {
     return [] as unknown as AnkiMultiResults<TActions>;
   }
@@ -124,28 +135,31 @@ export async function invokeAnkiMulti<
     version: ANKI_CONNECT_VERSION,
     ...(params === undefined ? {} : { params }),
   }));
-  const replies = await invokeAnki<unknown>("multi", {
-    actions: nestedActions,
-  });
+  const replies = await invokeAnki<unknown>(
+    "multi", { actions: nestedActions }, options,
+  );
 
   if (!Array.isArray(replies) || replies.length !== actions.length) {
-    throw new Error(
-      "AnkiConnect returned a misaligned multi-action response",
+    throw new AnkiRequestError(
+      "invalid-response", "multi",
+      "The endpoint returned a misaligned multi-action response.", true,
     );
   }
 
   const results = replies.map((reply, index) => {
     if (!isAnkiResponse(reply)) {
-      throw new Error(
-        `AnkiConnect returned an invalid response for multi action ${index}`,
+      throw new AnkiRequestError(
+        "invalid-response", "multi",
+        `The endpoint returned an invalid response for multi action ${index}.`, true,
       );
     }
 
     const action = actions[index];
 
     if (action === undefined) {
-      throw new Error(
-        `AnkiConnect returned an unexpected multi action at index ${index}`,
+      throw new AnkiRequestError(
+        "invalid-response", "multi",
+        `The endpoint returned an unexpected multi action at index ${index}.`, true,
       );
     }
 

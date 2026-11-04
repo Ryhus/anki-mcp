@@ -32,13 +32,33 @@ Create a `.env` file in the repository root:
 ```dotenv
 ANKI_URL=http://127.0.0.1:8765
 
+# Optional: full AnkiConnect HTTP request deadline (milliseconds)
+# ANKI_REQUEST_TIMEOUT_MS=30000
+
 # Optional: ":"-separated on macOS/Linux and ";"-separated on Windows
 # ANKI_MEDIA_IMPORT_DIRS=/absolute/path/to/media
 ```
 
-`ANKI_URL` must point to the HTTP endpoint exposed by AnkiConnect. The example
+`ANKI_URL` must point directly to the HTTP(S) endpoint exposed by AnkiConnect,
+without embedded URL credentials. API redirects are not followed. The example
 uses its usual local address; change it if your AnkiConnect instance uses a
 different host or port.
+
+`ANKI_REQUEST_TIMEOUT_MS` is optional and defaults to **30,000 ms (30 seconds)**.
+It must be an integer from 1 to 300,000 ms; `0` does not disable the deadline.
+The deadline includes connecting, waiting for headers, and loading the JSON
+response body. As with other JavaScript timers, it cannot interrupt synchronous
+CPU work while the event loop is blocked. Each AnkiConnect HTTP request gets its
+own deadline: a tool that makes several requests can take longer overall. A
+`multi` batch shares one HTTP deadline and is not an atomic transaction. Set the
+MCP client's tool timeout accordingly; the client may stop waiting sooner.
+This setting does not change the separate timeout for public HTTPS media downloads.
+
+Requests are **never automatically retried**. A timeout, cancellation, or bad
+response after sending does not prove that an operation failed: Anki may have
+already changed data. Stopping HTTP does not cancel/roll back work inside Anki.
+Inspect the current state before retrying any mutation; obtain a fresh preview
+and hash where the tool requires them.
 
 `ANKI_MEDIA_IMPORT_DIRS` is optional. When set, `store-media-file` accepts
 `localPath` sources only when their resolved path is inside one of these
@@ -74,8 +94,9 @@ npm test
 
 Runs unit tests and MCP integration tests, including both supported protocol
 eras, JSON Schema compilation, native media content, stdio child processes,
-large requests, and shutdown. Tests use mocked AnkiConnect responses and do
-not require or modify a running Anki collection.
+large requests, and shutdown. Tests use mocked AnkiConnect responses and local
+fake HTTP servers (including stalled headers/bodies and redirects). They do not
+require or modify a running Anki collection.
 
 ### Build the project
 
@@ -819,6 +840,32 @@ Check that:
 - Anki is running;
 - the AnkiConnect-compatible API is available;
 - `ANKI_URL` is present and points to the correct endpoint.
+
+Transport/configuration errors include a readable code:
+
+| Code | Meaning / next check |
+| --- | --- |
+| `ANKI_CONFIGURATION_ERROR` | Missing/invalid URL or timeout; no HTTP request was sent. |
+| `ANKI_INVALID_REQUEST` | Parameters cannot be serialized as JSON; no HTTP request was sent. |
+| `ANKI_TIMEOUT` | The full HTTP exchange exceeded its deadline. Check Anki responsiveness or adjust `ANKI_REQUEST_TIMEOUT_MS`. |
+| `ANKI_REQUEST_CANCELLED` | A low-level caller cancelled the request. The message states whether sending had started. |
+| `ANKI_NETWORK_ERROR` | Connection/TLS failure or an interrupted body. Check Anki, AnkiConnect, the endpoint, and any reported network code. |
+| `ANKI_HTTP_ERROR` | Unexpected HTTP status, including redirects. Check the direct API URL, proxy, and authentication settings. |
+| `ANKI_INVALID_JSON` | The endpoint returned invalid JSON, for example an HTML login page. |
+| `ANKI_INVALID_RESPONSE` | JSON was not an AnkiConnect envelope, or `multi` replies were malformed/misaligned. |
+
+Transport messages omit the endpoint, request parameters, raw response content,
+and native error causes. AnkiConnect's own action-level errors remain unchanged.
+After a request was started, treat failure as an **unknown outcome**, especially
+for mutations or `multi`; inspect Anki instead of blindly repeating the action.
+
+For internal TypeScript callers, `callAnki`, `invokeAnki`, and `invokeAnkiMulti`
+accept optional `{ timeoutMs, signal }` request options. A per-call timeout takes
+precedence over the environment/default. `AnkiRequestError` exposes `kind`,
+`action`, `mayHaveExecuted`, `status`, and `timeoutMs`; `mayHaveExecuted: true`
+means sending started, not proof that Anki executed the action. The optional
+signal is a low-level API: MCP request cancellation is not automatically wired
+to it, and cancelling a client request must not be treated as a rollback.
 
 ### The server appears to wait without printing anything
 
