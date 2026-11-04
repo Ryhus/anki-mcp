@@ -1,4 +1,5 @@
 import { invokeAnki } from "../anki-request.js";
+import { findAnkiCards } from "../cards/card-client.js";
 import type {
   AnkiDeckStatsMap,
   CardId,
@@ -15,10 +16,52 @@ export function createAnkiDeck(name: string): Promise<DeckId> {
   return invokeAnki<DeckId>("createDeck", { deck: name });
 }
 
-export function getAnkiDeckStats(
+export async function getAnkiDeckStats(
   names: string[],
 ): Promise<AnkiDeckStatsMap> {
-  return invokeAnki<AnkiDeckStatsMap>("getDeckStats", { decks: names });
+  try {
+    return await invokeAnki<AnkiDeckStatsMap>("getDeckStats", { decks: names });
+  } catch (error) {
+    if (!areDeckCountsUnavailable(error)) {
+      throw error;
+    }
+  }
+
+  // Newer Anki versions omit the empty default deck from the scheduler tree.
+  // AnkiConnect can fail the entire batch instead of returning its zero counts.
+  const knownDecks = await getDeckNameMap();
+  const result: AnkiDeckStatsMap = {};
+  // Keep the fallback sequential: AnkiConnect limits simultaneous HTTP clients.
+  for (const name of names) {
+    try {
+      Object.assign(result, await invokeAnki<AnkiDeckStatsMap>("getDeckStats", { decks: [name] }));
+    } catch (error) {
+      const id = knownDecks[name];
+      if (!areDeckCountsUnavailable(error) || id === undefined) {
+        throw error;
+      }
+
+      // Native deck search includes descendants. Never infer zero scheduler
+      // counts for a deck that contains cards, even if AnkiConnect fails.
+      const literalName = name.replace(/[\\_*"]/gu, (character) => `\\${character}`);
+      const cards = await findAnkiCards(`deck:"${literalName}"`);
+      if (cards.length > 0) {
+        throw error;
+      }
+
+      result[String(id)] = {
+        deck_id: id, name, new_count: 0, learn_count: 0,
+        review_count: 0, total_in_deck: 0,
+      };
+    }
+  }
+
+  return result;
+}
+
+function areDeckCountsUnavailable(error: unknown): boolean {
+  return error instanceof Error &&
+    error.message === 'AnkiConnect action "getDeckStats" failed: Deck counts unavailable.';
 }
 
 export function getCardsByDeck(cardIds: CardId[]): Promise<CardsByDeckName> {

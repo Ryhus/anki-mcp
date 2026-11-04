@@ -255,6 +255,12 @@ Low-level deck configuration ID operations are not exposed to MCP clients.
 Deck option management will be added separately after its behavior has been
 validated against current Anki versions.
 
+Some AnkiConnect versions report `Deck counts unavailable.` when Anki omits
+the empty default deck from its scheduler tree. `get-deck-stats` isolates the
+per-deck results and returns zero counts only after native search confirms
+that the affected deck and its descendants contain no cards. Other errors,
+including unavailable counts for nonempty decks, remain errors.
+
 ### Note type tools
 
 - `list-note-types` lists the note types available for note creation.
