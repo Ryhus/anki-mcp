@@ -7,7 +7,10 @@ import {
   toCardFlag,
   toCardFlagValue,
 } from "./card-normalizers.js";
-import { loadCardInfo } from "./card-loader.js";
+import {
+  applyAndVerifyCardMutation,
+  loadCardMutationScope,
+} from "./card-mutation-utils.js";
 import {
   cardFlagSchema,
   cardIdListSchema,
@@ -26,7 +29,7 @@ type SetCardFlagInput = z.infer<typeof setCardFlagInputSchema>;
 export const setCardFlagConfig = {
   title: "Set card flag",
   description:
-    "Applies one of Anki's supported flag colors to existing cards without exposing arbitrary internal card fields.",
+    "Applies one of Anki's supported flag colors and verifies saved flags without exposing arbitrary internal card fields. Missing Cards block the whole selection; a write error stops later writes and may leave partial progress.",
   inputSchema: setCardFlagInputSchema,
   outputSchema: z.object({
     flag: cardFlagSchema,
@@ -43,34 +46,39 @@ export async function setCardFlag({
   cardIds,
   flag,
 }: SetCardFlagInput): Promise<CallToolResult> {
-  const { cards, missingCardIds } = await loadCardInfo(cardIds);
+  const cards = await loadCardMutationScope(cardIds);
+  const unknownFlags = cards.filter((card) => toCardFlag(card.flags) === "unknown");
+  if (unknownFlags.length > 0) {
+    throw new Error(`No Cards were changed. Current flags are missing or invalid for Card IDs: ${unknownFlags.map(({ cardId }) => cardId).join(", ")}.`);
+  }
   const unchangedCardIds = cards
     .filter((info) => toCardFlag(info.flags) === flag)
     .map((info) => info.cardId);
   const cardsToUpdate = cards.filter(
     (info) => toCardFlag(info.flags) !== flag,
   );
-  const updatedCardIds: number[] = [];
-  const failedCardIds: number[] = [];
+  const updatedCardIds = cardsToUpdate.map(({ cardId }) => cardId);
   const flagValue = toCardFlagValue(flag);
 
-  for (const info of cardsToUpdate) {
-    try {
-      await setAnkiCardFlag(info.cardId, flagValue);
-      updatedCardIds.push(info.cardId);
-    } catch {
-      failedCardIds.push(info.cardId);
-    }
+  if (cardsToUpdate.length > 0) {
+    await applyAndVerifyCardMutation(
+      "flag update", cards,
+      cardsToUpdate.map(({ cardId }) => ({
+        cardIds: [cardId],
+        apply: () => setAnkiCardFlag(cardId, flagValue),
+      })),
+      (card) => toCardFlag(card.flags) === flag,
+    );
   }
 
   return createToolResult(
-    `Set the ${flag} flag on ${updatedCardIds.length} card${updatedCardIds.length === 1 ? "" : "s"}; ${unchangedCardIds.length} were unchanged, ${missingCardIds.length} were not found, and ${failedCardIds.length} failed.`,
+    `Set and verified the ${flag} flag on ${updatedCardIds.length} card${updatedCardIds.length === 1 ? "" : "s"}; ${unchangedCardIds.length} were unchanged.`,
     {
       flag,
       updatedCardIds,
       unchangedCardIds,
-      missingCardIds,
-      failedCardIds,
+      missingCardIds: [],
+      failedCardIds: [],
     },
   );
 }

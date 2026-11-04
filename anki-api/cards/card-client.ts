@@ -51,10 +51,16 @@ export function getAnkiCardsSuspensionStatus(
 export async function setAnkiCardsSuspended(
   cardIds: CardId[],
   suspended: boolean,
-): Promise<void> {
-  await invokeAnki<boolean>(suspended ? "suspend" : "unsuspend", {
+): Promise<boolean | null> {
+  const result = await invokeAnki<unknown>(suspended ? "suspend" : "unsuspend", {
     cards: cardIds,
   });
+  // A false suspend result can mean the desired state was already reached. Legacy
+  // unsuspend returns null, not a success boolean; both need state readback.
+  if (typeof result !== "boolean" && !(result === null && !suspended)) {
+    throw new Error("AnkiConnect returned an invalid suspension acknowledgement");
+  }
+  return result;
 }
 
 /** Sets only the supported Anki flag field on one card. */
@@ -72,7 +78,7 @@ export async function setAnkiCardFlag(
   );
 
   if (
-    result === false ||
+    !Array.isArray(result) ||
     result.length !== 1 ||
     result[0] !== true
   ) {
@@ -85,24 +91,33 @@ export async function rescheduleAnkiCards(
   cardIds: CardId[],
   due: string,
 ): Promise<void> {
-  await invokeAnki<boolean>("setDueDate", {
+  const result = await invokeAnki<unknown>("setDueDate", {
     cards: cardIds,
     days: due,
   });
+  if (result !== true) {
+    throw new Error("AnkiConnect did not acknowledge setting card due dates");
+  }
 }
 
 /** Resets cards to the new state. */
 export async function resetAnkiCardsToNew(
   cardIds: CardId[],
 ): Promise<void> {
-  await invokeAnki<null>("forgetCards", { cards: cardIds });
+  const result = await invokeAnki<unknown>("forgetCards", { cards: cardIds });
+  if (result !== null) {
+    throw new Error("AnkiConnect returned an invalid reset acknowledgement");
+  }
 }
 
-/** Forces cards into Anki's relearning state. */
+/** Starts native relearning; current AnkiConnect may record an Again answer. */
 export async function startAnkiCardsRelearning(
   cardIds: CardId[],
 ): Promise<void> {
-  await invokeAnki<null>("relearnCards", { cards: cardIds });
+  const result = await invokeAnki<unknown>("relearnCards", { cards: cardIds });
+  if (result !== null) {
+    throw new Error("AnkiConnect returned an invalid relearning acknowledgement");
+  }
 }
 
 /** Gets the complete review log for each requested card. */

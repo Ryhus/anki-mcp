@@ -259,11 +259,55 @@ The server currently exposes tools for:
 - `set-card-flag` safely applies one of Anki's supported flag colors.
 - `reschedule-cards` changes due dates with Anki's Set Due Date syntax.
 - `reset-cards-to-new` resets card scheduling progress.
-- `start-card-relearning` moves cards into the relearning state.
+- `start-card-relearning` starts relearning for active Review cards and reports
+  which entered Relearning, returned directly to Review, or were suspended.
 
 Low-level scheduling field and ease-factor setters are not exposed to MCP
-clients. Answering cards is also deferred to a future user-driven review
-workflow so an LLM cannot create review history on the user's behalf.
+clients. A general-purpose answer/reviewer tool is not exposed. However,
+`start-card-relearning` can perform an **Again answer** in current AnkiConnect,
+adding review history and changing repetition/lapse counts. Treat it as a study
+action, not a harmless metadata edit. Anki may skip the relearning queue when
+no steps are configured, or suspend a leech. See Anki's
+[relearning options](https://docs.ankiweb.net/manual/deck-options#relearning-steps).
+
+#### Verified Card changes
+
+The five Card mutation tools require every requested Card to exist and be
+readable before writing; a missing/incomplete Card blocks the whole selection.
+Duplicate input IDs are processed once. These tools apply immediately: this
+workflow does not add `dryRun`, revision hashes, or an approval dialog.
+
+- Suspension and flag changes skip Cards already in the requested state. When
+  a write is needed, `cardsInfo` verifies the desired state of the full selection.
+  AnkiConnect's `suspend` boolean (including `false` for no change) and legacy
+  `unsuspend` null acknowledgement are handled separately from verification.
+- Due-date changes require a positive `setDueDate` acknowledgement, then verify
+  Review state and the requested date/range with Anki's native `prop:due` search.
+  This uses Anki's scheduler day/rollover, not the MCP host's date. Intervals are
+  managed by the current scheduler/FSRS; no exact interval or random day is
+  predicted. Offsets must be ascending nonnegative 32-bit integers.
+- Reset checks New type/queue, zero interval, and reset ease factor.
+  It does **not** promise to erase review history or repetition/lapse counts;
+  Anki may record a reset entry, restore a previous new-card position, or retain
+  a stale internal `left` value that is inactive once the Card is New.
+- Relearning accepts only active Review Cards. Verification distinguishes an
+  actual Relearning queue from an immediate return to Review or leech
+  suspension. The latter outcomes also require increased repetition/lapse
+  counts so an unchanged Review Card cannot masquerade as a successful lapse.
+
+Flag writes are sequential. A failed write stops later writes and reports
+acknowledged-but-unverified and not-attempted IDs; failures are not silently
+collected into a successful result. Existing success response fields are kept;
+`start-card-relearning` additionally returns `reviewCardIds` and
+`suspendedCardIds`. `failedCardIds` is empty on verified flag success; failure
+is an MCP error instead of a normal success response.
+
+Readback checks Card identity and operation-specific state, not every Card
+field or all historical side effects. It is a point-in-time check, not an
+atomic transaction. A concurrent edit, scheduler rollover, or read failure may
+prevent verification even after a write succeeded. Errors state that changes
+may already be applied; there is no automatic retry, rollback, or MCP backup.
+Reset and relearning are marked non-idempotent because Anki may log actions.
 
 #### Static HTML/CSS preview
 

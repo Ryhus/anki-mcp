@@ -73,7 +73,9 @@ export function toCardFlagValue(flag: CardFlag): number {
 }
 
 export function toCardFlag(flag: number | undefined): CardFlagOutput {
-  const entry = Object.entries(FLAG_VALUES).find(([, value]) => value === flag);
+  if (flag === undefined || !Number.isInteger(flag) || flag < 0 || flag > 255) return "unknown";
+  // Anki stores the user-visible flag in the low three bits.
+  const entry = Object.entries(FLAG_VALUES).find(([, value]) => value === (flag & 7));
 
   return (entry?.[0] as CardFlag | undefined) ?? "unknown";
 }

@@ -54,9 +54,8 @@ export async function loadCards(cardIds: CardId[]): Promise<LoadedCards> {
     const isSuspended = suspensionStatuses[index];
 
     if (
-      isDue === undefined ||
-      isSuspended === undefined ||
-      isSuspended === null
+      typeof isDue !== "boolean" ||
+      typeof isSuspended !== "boolean"
     ) {
       throw new Error(
         `AnkiConnect returned incomplete data for card ${info.cardId}`,
@@ -75,10 +74,17 @@ export async function loadCardInfo(
 ): Promise<LoadedCardInfo> {
   const requestedCardIds = unique(cardIds);
   const rawCards = await getAnkiCardsInfo(requestedCardIds);
+  if (!Array.isArray(rawCards)) {
+    throw new Error("AnkiConnect returned an invalid cardsInfo result");
+  }
+  const requested = new Set(requestedCardIds);
   const cardsById = new Map<CardId, AnkiCardInfo>();
 
   for (const rawCard of rawCards) {
     if (isAnkiCardInfo(rawCard)) {
+      if (!requested.has(rawCard.cardId) || cardsById.has(rawCard.cardId)) {
+        throw new Error("AnkiConnect returned unexpected or duplicate Card IDs");
+      }
       cardsById.set(rawCard.cardId, rawCard);
     }
   }
@@ -102,8 +108,9 @@ export async function loadCardInfo(
   return { cards, missingCardIds };
 }
 
-function isAnkiCardInfo(card: AnkiCardInfoResult): card is AnkiCardInfo {
+function isAnkiCardInfo(card: AnkiCardInfoResult | null): card is AnkiCardInfo {
   return (
+    typeof card === "object" && card !== null && !Array.isArray(card) &&
     typeof card.cardId === "number" &&
     typeof card.note === "number" &&
     typeof card.deckName === "string" &&
@@ -115,6 +122,8 @@ function isAnkiCardInfo(card: AnkiCardInfoResult): card is AnkiCardInfo {
     typeof card.factor === "number" &&
     typeof card.reps === "number" &&
     typeof card.lapses === "number" &&
+    Number.isSafeInteger(card.due) &&
+    Number.isSafeInteger(card.left) &&
     typeof card.mod === "number" &&
     typeof card.question === "string" &&
     typeof card.answer === "string" &&
