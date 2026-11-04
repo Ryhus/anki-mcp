@@ -1,3 +1,10 @@
+import { createHash } from "node:crypto";
+
+/** Hashes the exact UTF-8 field value, including HTML and whitespace. */
+export function calculateNoteFieldHash(value: string): string {
+  return createHash("sha256").update(value).digest("hex");
+}
+
 /**
  * Maps submitted field names to the exact casing defined by an Anki note type.
  * Returns a readable error instead of allowing AnkiConnect to silently ignore

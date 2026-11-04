@@ -110,9 +110,15 @@ export const noteDraftSchema = z.object({
   }),
 });
 
+export const noteFieldHashSchema = z
+  .string()
+  .regex(/^[a-f0-9]{64}$/u, "Expected a lowercase SHA-256 field hash")
+  .describe("SHA-256 of the complete UTF-8 field value, including HTML");
+
 export const noteFieldSchema = z.object({
   value: z.string(),
   order: z.number().int().nonnegative(),
+  hash: noteFieldHashSchema,
 });
 
 export const noteSummarySchema = z.object({

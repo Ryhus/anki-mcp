@@ -21,7 +21,7 @@ type GetNoteDetailsInput = z.infer<
 export const getNoteDetailsConfig = {
   title: "Get note details",
   description:
-    "Returns complete ordered fields, tags, note type, modification time, and generated card IDs for selected notes.",
+    "Returns complete ordered fields with per-field hashes, tags, note type, modification time, and generated card IDs. Use fields[name].hash as expectedFieldHashes[name] when updating fields.",
   inputSchema: getNoteDetailsInputSchema,
   outputSchema: z.object({
     notes: z.array(noteDetailsSchema),

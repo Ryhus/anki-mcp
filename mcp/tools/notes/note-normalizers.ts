@@ -6,6 +6,7 @@ import type {
   NoteDetails,
   NoteSummary,
 } from "./shared-schemas.js";
+import { calculateNoteFieldHash } from "./note-field-utils.js";
 
 const FIELD_PREVIEW_LENGTH = 200;
 
@@ -32,7 +33,12 @@ export function toNoteDetails(note: AnkiNoteInfo): NoteDetails {
     noteId: note.noteId,
     modelName: note.modelName,
     tags: [...note.tags],
-    fields: sortFields(note.fields),
+    fields: Object.fromEntries(
+      Object.entries(sortFields(note.fields)).map(([name, field]) => [
+        name,
+        { ...field, hash: calculateNoteFieldHash(field.value) },
+      ]),
+    ),
     cardIds: [...note.cards],
     modifiedAt: new Date(note.mod * 1_000).toISOString(),
   };

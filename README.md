@@ -335,20 +335,77 @@ applied.
 
 - `search-notes` searches with Anki query syntax and returns a bounded page of
   field previews, tags, and generated card IDs.
-- `get-note-details` returns complete ordered fields and metadata for selected
-  notes.
+- `get-note-details` returns complete ordered fields, per-field SHA-256 hashes,
+  and metadata for selected notes.
 - `validate-note-drafts` checks decks, note types, field names, empty-card
   rules, existing media references, and duplicates without creating anything.
 - `create-notes` validates and creates a bounded batch, then returns both note
   IDs and generated card IDs. Each draft can safely merge `mediaReferences`
   for files that already exist in Anki.
-- `update-note-fields` applies partial field patches only after validating the
-  complete batch.
+- `update-note-fields` previews partial field patches by default, rejects stale
+  field hashes before writing any note, and verifies saved values after applying.
 - `edit-note-tags` adds and removes selected tags without replacing unrelated
   tags.
 - `list-tags` returns a filtered, paginated view of collection tags.
 - `delete-notes-and-cards` permanently deletes explicit note IDs and all cards
   generated from them.
+
+#### Safe field updates
+
+`update-note-fields` defaults to `dryRun: true`. Existing callers that apply
+updates must now explicitly set `dryRun: false` and provide
+`expectedFieldHashes` for every submitted field.
+
+A dry run validates the complete batch and returns `changes` with canonical
+field names, `beforeFieldHash`, `afterFieldHash`, and raw HTML previews of the
+current and proposed values. Each preview is limited to 1,000 UTF-16 code
+units; `previewTruncated` identifies shortened previews. Hashes always cover
+the complete value, including HTML and whitespace.
+
+For example, preview a field replacement:
+
+```json
+{
+  "dryRun": true,
+  "updates": [
+    {
+      "noteId": 1234567890123,
+      "fields": {
+        "Front": "<b>das Haus</b><br>Translation: house"
+      }
+    }
+  ]
+}
+```
+
+To apply the same patch, set `dryRun: false` and add
+`"expectedFieldHashes": { "Front": "<beforeFieldHash from the preview>" }`
+inside the update object. Replace the placeholder with the actual 64-character
+hash. A separate preview is optional: `get-note-details` already returns the
+hash as `notes[i].fields.Front.hash`, which can be passed directly when applying.
+When using a preview to check an earlier read, include those earlier hashes in
+the dry run too; a hash-free preview only describes the current data.
+
+Field names and hash keys resolve case-insensitively to the note type's exact
+names. Only submitted fields are checked for conflicts, so editing another
+field does not block the patch. Missing notes, invalid field names, or any
+stale expected hash reject the whole batch before the first write. No-op
+patches skip writes and additional readback. Successful apply results report
+`applied: true` and `verified: true` after changed fields have been read back
+and matched exactly; for no-op patches, values were already matched during
+validation. Dry runs report both flags as `false`.
+
+Each submitted field replaces its complete value. Preserve any existing HTML
+or media markup that should remain; unspecified fields are untouched. A hash
+check detects changes since the read or preview, but cannot judge whether the
+proposed replacement preserves the intended content.
+
+The preflight check and subsequent writes are separate AnkiConnect calls, not
+an atomic transaction. A concurrent edit in that interval remains possible.
+On a write or verification error, the tool reports an MCP error with the
+affected or acknowledged note IDs. Earlier writes may already be saved; no
+automatic rollback or retry is performed. Inspect current values before
+preparing another patch.
 
 Global tag replacement, unused-tag cleanup, and changing an existing note to
 another note type are intentionally deferred because they require additional

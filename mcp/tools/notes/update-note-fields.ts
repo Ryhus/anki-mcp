@@ -1,149 +1,73 @@
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
-import { z } from "zod";
-import { updateAnkiNoteFields } from "../../../anki-api/notes/note-client.js";
 import { DESTRUCTIVE_TOOL_ANNOTATIONS } from "../../utils/tool-annotations.js";
 import { createToolResult } from "../../utils/tool-result.js";
-import { canonicalizeFields } from "./note-field-utils.js";
-import { loadNotes } from "./note-loader.js";
 import {
-  NOTE_MUTATION_BATCH_LIMIT,
-  noteFieldValuesSchema,
-  noteIdSchema,
-} from "./shared-schemas.js";
-
-const noteFieldUpdateSchema = z.object({
-  noteId: noteIdSchema,
-  fields: noteFieldValuesSchema.describe(
-    "Partial field patch. Unspecified fields remain unchanged.",
-  ),
-});
-
-const updateNoteFieldsInputSchema = z.object({
-  updates: z
-    .array(noteFieldUpdateSchema)
-    .min(1)
-    .max(NOTE_MUTATION_BATCH_LIMIT)
-    .refine(
-      (updates) =>
-        new Set(updates.map(({ noteId }) => noteId)).size ===
-        updates.length,
-      { message: "Each note ID can appear only once in an update batch" },
-    ),
-});
-
-type UpdateNoteFieldsInput = z.infer<
-  typeof updateNoteFieldsInputSchema
->;
-
-const updatedNoteSchema = z.object({
-  noteId: noteIdSchema,
-  updatedFields: z.array(z.string()),
-});
-
-const rejectedUpdateSchema = z.object({
-  noteId: noteIdSchema,
-  error: z.string(),
-});
+  updateNoteFieldsInputSchema,
+  updateNoteFieldsOutputSchema,
+  type UpdateNoteFieldsInput,
+} from "./note-field-update-schemas.js";
+import {
+  applyAndVerifyNoteFieldUpdates,
+  prepareNoteFieldUpdates,
+} from "./note-field-update-utils.js";
+import { loadNotes } from "./note-loader.js";
 
 export const updateNoteFieldsConfig = {
   title: "Update note fields",
   description:
-    "Applies partial field patches to existing notes. All note IDs and field names are validated before any field is changed.",
+    "Previews partial field patches by default. To apply, set dryRun to false and provide expectedFieldHashes for every submitted field from get-note-details or a dry run. Validates the complete batch before writing and verifies saved values. Each submitted field replaces its complete value, including HTML.",
   inputSchema: updateNoteFieldsInputSchema,
-  outputSchema: z.object({
-    applied: z.boolean(),
-    updatedNotes: z.array(updatedNoteSchema),
-    unchangedNoteIds: z.array(noteIdSchema),
-    missingNoteIds: z.array(noteIdSchema),
-    rejectedUpdates: z.array(rejectedUpdateSchema),
-  }),
+  outputSchema: updateNoteFieldsOutputSchema,
   annotations: DESTRUCTIVE_TOOL_ANNOTATIONS,
 };
 
-/** Validates a complete batch before overwriting any note field values. */
-export async function updateNoteFields({
-  updates,
-}: UpdateNoteFieldsInput): Promise<CallToolResult> {
+/** Rejects stale batches before writing and reports success only after readback. */
+export async function updateNoteFields(
+  input: UpdateNoteFieldsInput,
+): Promise<CallToolResult> {
   const { notes, missingNoteIds } = await loadNotes(
-    updates.map(({ noteId }) => noteId),
+    input.updates.map(({ noteId }) => noteId),
   );
-  const notesById = new Map(notes.map((note) => [note.noteId, note]));
-  const preparedUpdates: Array<{
-    noteId: number;
-    fields: Record<string, string>;
-    updatedFields: string[];
-  }> = [];
-  const unchangedNoteIds: number[] = [];
-  const rejectedUpdates: Array<{ noteId: number; error: string }> = [];
-
-  for (const update of updates) {
-    const note = notesById.get(update.noteId);
-
-    if (note === undefined) {
-      continue;
-    }
-
-    const canonicalFields = canonicalizeFields(
-      update.fields,
-      Object.keys(note.fields),
-    );
-
-    if (typeof canonicalFields === "string") {
-      rejectedUpdates.push({
-        noteId: update.noteId,
-        error: canonicalFields,
-      });
-      continue;
-    }
-
-    const changedFields = Object.entries(canonicalFields).filter(
-      ([name, value]) => note.fields[name]?.value !== value,
-    );
-
-    if (changedFields.length === 0) {
-      unchangedNoteIds.push(update.noteId);
-      continue;
-    }
-
-    preparedUpdates.push({
-      noteId: update.noteId,
-      fields: Object.fromEntries(changedFields),
-      updatedFields: changedFields.map(([name]) => name),
-    });
-  }
+  const { preparedUpdates, changes, unchangedNoteIds, rejectedUpdates } =
+    prepareNoteFieldUpdates(input, notes);
+  const result = {
+    dryRun: input.dryRun,
+    applied: false,
+    verified: false,
+    changedFieldCount: changes.filter(({ changed }) => changed).length,
+    changes,
+    updatedNotes: [],
+    unchangedNoteIds,
+    missingNoteIds,
+    rejectedUpdates,
+  };
 
   if (missingNoteIds.length > 0 || rejectedUpdates.length > 0) {
     return createToolResult(
-      `Applied no field updates because ${missingNoteIds.length} note ID${missingNoteIds.length === 1 ? " was" : "s were"} missing and ${rejectedUpdates.length} update${rejectedUpdates.length === 1 ? " was" : "s were"} invalid.`,
-      {
-        applied: false,
-        updatedNotes: [],
-        unchangedNoteIds,
-        missingNoteIds,
-        rejectedUpdates,
-      },
+      `Applied no field updates because ${missingNoteIds.length} note ID(s) were missing and ${rejectedUpdates.length} update(s) were invalid or stale.`,
+      result,
     );
   }
 
-  for (const update of preparedUpdates) {
-    await updateAnkiNoteFields({
-      id: update.noteId,
-      fields: update.fields,
-    });
+  if (input.dryRun) {
+    return createToolResult(
+      `Dry run prepared ${result.changedFieldCount} field change(s); Anki was not changed. Use each beforeFieldHash as the expectedFieldHashes entry when applying the same patch.`,
+      result,
+    );
   }
 
-  const updatedNotes = preparedUpdates.map(
-    ({ noteId, updatedFields }) => ({ noteId, updatedFields }),
-  );
+  await applyAndVerifyNoteFieldUpdates(preparedUpdates);
 
   return createToolResult(
-    `Updated ${updatedNotes.length} note${updatedNotes.length === 1 ? "" : "s"}; ${unchangedNoteIds.length} already contained the requested field values.`,
+    `Updated and verified ${preparedUpdates.length} note(s); ${unchangedNoteIds.length} already contained the requested field values.`,
     {
+      ...result,
       applied: true,
-      updatedNotes,
-      unchangedNoteIds,
-      missingNoteIds: [],
-      rejectedUpdates: [],
+      verified: true,
+      updatedNotes: preparedUpdates.map(({ noteId, fields }) => ({
+        noteId,
+        updatedFields: Object.keys(fields),
+      })),
     },
   );
 }
