@@ -79,7 +79,8 @@ export async function moveAnkiCards(
 }
 
 /**
- * Permanently deletes a deck and all cards it contains.
+ * Requests native removal of a deck and its descendants. Callers must review
+ * normal/filtered semantics and Default's special handling before using this.
  */
 export async function deleteAnkiDeck(name: string): Promise<void> {
   await invokeAnki<null>("deleteDecks", {

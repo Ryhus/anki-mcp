@@ -314,7 +314,8 @@ for card classes, night mode, and shared Note Type CSS.
 - `get-deck-stats` returns scheduler counts for selected or all decks.
 - `get-card-decks` groups card IDs by their current deck.
 - `move-cards-to-deck` moves cards and creates the target deck when necessary.
-- `delete-deck-and-cards` permanently deletes one deck and all of its cards.
+- `delete-deck-and-cards` previews deletion of a normal deck and its complete
+  subtree, then requires a reviewed impact hash and explicit confirmation.
 
 Low-level deck configuration ID operations are not exposed to MCP clients.
 Deck option management will be added separately after its behavior has been
@@ -325,6 +326,83 @@ the empty default deck from its scheduler tree. `get-deck-stats` isolates the
 per-deck results and returns zero counts only after native search confirms
 that the affected deck and its descendants contain no cards. Other errors,
 including unavailable counts for nonempty decks, remain errors.
+
+#### Safe deck deletion
+
+`delete-deck-and-cards` now defaults to `dryRun: true`. Old calls containing
+only `name` no longer delete anything. Use the exact root name from `list-decks`:
+
+```json
+{
+  "name": "Languages::German"
+}
+```
+
+Review `profileName`, `deck`, `impactComplete`, `impact`, `blockers`, and
+`warnings`. Descendants are included automatically. Impact counts distinguish
+deleted Cards, Notes that lose their last Card, and Notes/Cards preserved
+elsewhere. Samples contain up to 20 decks, Card IDs, and affected Notes;
+truncation flags identify omitted samples. Use the existing detail tools to
+inspect sampled IDs when needed. Unknown counts are `null`, not evidence of
+zero impact. Incomplete scopes have `impactHash: null`. A rejected stale apply
+request may return a new current hash; do not automatically reuse it without
+reviewing the changed impact and obtaining user approval.
+
+After the user approves the complete impact, apply with the reviewed hash:
+
+```json
+{
+  "name": "Languages::German",
+  "dryRun": false,
+  "expectedImpactHash": "<impactHash from the complete reviewed preview>",
+  "confirmDeletion": true
+}
+```
+
+Replace the placeholder with the actual 64-character lowercase hash. Before
+writing, the server reloads the subtree, Card placement, and affected Notes.
+The hash includes the active profile, every deck ID/name, all target Card IDs
+and their current deck assignments, and full affected Note snapshots (fields,
+HTML, field order, tags, modification times, and all sibling Card IDs). It is
+calculated before sampling, so unchanged totals or identical displayed
+samples cannot conceal changed impact. Unrelated decks/Notes do not affect it.
+Card scheduling, review logs, deck option settings, shared Note Type design,
+and the placement of preserved outside siblings are not hashed.
+
+Only normal decks are supported. The built-in Default deck **ID 1** is blocked,
+even if renamed or nested. Filtered decks, descendants of unknown/unsupported
+kind, and Cards borrowed from the subtree into filtered decks are blocked.
+`getDeckConfig` must reliably identify each deck as normal (`dyn: false` or
+`0`); errors or missing metadata cannot be bypassed with confirmation flags.
+Return borrowed Cards or resolve the issue with user approval, then review a
+fresh preview. The tool never automatically empties filters, moves Cards,
+renames decks, or repairs data just to enable deletion.
+
+Full review is limited to 100 decks, 5,000 target Cards, 1,000 affected Notes,
+and 10,000 total Cards referenced by those Notes (including outside siblings).
+Exceeding a limit blocks application instead of silently reviewing a subset.
+Native searches use validated numeric deck/Card/Note IDs, not interpolated deck
+names or wildcards. Note reads and explicit-ID checks are batched at 250 IDs.
+Multiple read phases are required; larger reviews take more work than the old
+immediate-delete operation. The active profile, hierarchy, target Card set,
+and referenced Card presence are checked again before an impact is complete.
+
+Anki deletes the normal deck subtree's Cards and their review history. A Note
+with other Cards outside the subtree **survives**, unlike `delete-notes-and-cards`,
+which deletes all Cards of its selected Notes. Shared Note Types and media
+files are not removed. See Anki's [native deck removal implementation](https://github.com/ankitects/anki/blob/main/rslib/src/decks/remove.rs)
+for normal/filtered behavior and Default's special handling.
+
+After applying, native searches verify that all reviewed deck IDs/names and
+target Cards are absent, orphaned Notes are gone, and expected surviving Notes
+and sibling Cards still exist. Only then are `applied` and `verified` true;
+`deletedDecks` contains the full reviewed subtree and `deletedDeck` its root.
+Preview/blocked results have false flags, empty `deletedDecks`, and null
+`deletedDeck`. A write or verification failure returns an MCP error: some data
+may already be deleted. No automatic retry, MCP backup, or rollback is provided.
+Inspect Anki before retrying. Read/compare/delete is not atomic, and concurrent
+changes after the final read can still race. The hash and confirmation flag
+are not authentication or proof of human approval.
 
 ### Note type tools
 
