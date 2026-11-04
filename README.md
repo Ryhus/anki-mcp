@@ -453,8 +453,9 @@ applied.
 - `edit-note-tags` adds and removes selected tags without replacing unrelated
   tags.
 - `list-tags` returns a filtered, paginated view of collection tags.
-- `delete-notes-and-cards` permanently deletes explicit note IDs and all cards
-  generated from them.
+- `delete-notes-and-cards` previews deletion of explicit Note IDs and all their
+  generated Cards. Applying requires a reviewed impact hash and confirmation;
+  native searches verify the result.
 
 #### Safe field updates
 
@@ -516,6 +517,74 @@ preparing another patch.
 Global tag replacement, unused-tag cleanup, and changing an existing note to
 another note type are intentionally deferred because they require additional
 safety and data-preservation rules.
+
+#### Safe Note deletion
+
+`delete-notes-and-cards` now defaults to `dryRun: true`. Old calls that only
+provide `noteIds` **no longer delete anything**. The tool accepts 1–100 explicit
+IDs (duplicates are ignored), not search queries.
+
+First request a preview:
+
+```json
+{
+  "noteIds": [1234567890000, 1234567890001]
+}
+```
+
+Review `profileName`, `impact`, `missingNoteIds`, `blockers`, and `warnings`.
+`impact` reports exact Note/Card counts and one entry per loaded Note. Each
+entry shows the first 3 ordered fields (raw HTML, up to 200 UTF-16 code units
+per value) and up to 20 generated Card IDs. `fieldPreviewsTruncated` and
+`cardIdsTruncated` identify shortened samples. Use `get-note-details` when
+more content is needed to decide whether deletion is appropriate.
+
+After the user approves the data loss, submit the **same Note IDs** with:
+
+```json
+{
+  "noteIds": [1234567890000, 1234567890001],
+  "dryRun": false,
+  "expectedImpactHash": "<impactHash from the reviewed preview>",
+  "confirmDeletion": true
+}
+```
+
+Replace the placeholder with the actual 64-character lowercase hash. The
+server rereads the selected Notes and compares their impact hash before
+sending any deletion. The hash covers the active profile name, requested IDs,
+Note IDs and Note Type names, modification timestamps, all tags, complete
+field values including HTML/whitespace, field names/orders, and all generated
+Card IDs. It covers data beyond the displayed samples. Reordering request
+IDs, tag lists, field-object entries, or Card ID lists does not change it.
+It is not a stored backup, authorization token, or guarantee of user approval.
+
+Any changed selection or snapshot blocks the **whole batch**. Missing or
+unloadable Notes are reported in `missingNoteIds`, make `impactHash: null`,
+and block deletion of the other Notes too. Inspect a fresh preview rather than
+automatically resubmitting a rejected operation with its new hash.
+
+Successful application returns `applied: true`, `verified: true`, and
+`deletedNotes` with the full reviewed Card IDs. Preview or blocked results
+return both flags as `false` and an empty `deletedNotes`. A preview needs one
+HTTP `multi` request (profile plus Note data); applying normally needs three
+HTTP requests: current scope, deletion, and batched verification. Verification
+uses explicit-ID native Note/Card searches, with Card queries split into
+groups of 250 IDs, and checks the active profile again. Invalid `notesInfo`
+objects are never used as proof of successful deletion.
+
+Deleting a Note deletes **all** of its generated Cards, including Cards in
+other decks, and their review history. Media files are not deleted. The hash
+does not include Card scheduling, deck placement, review history, or shared
+Note Type HTML/CSS. Changes to these alone do not invalidate it. Unselected
+Notes are not part of the hash.
+
+Read/compare/delete is not an atomic transaction: a concurrent edit after the
+last read can still race. No MCP backup, automatic retry, or rollback is
+performed. A write error can mean that deletion already reached Anki; a
+verification error can occur after Anki acknowledged deletion. Both return
+an MCP error describing the uncertain/acknowledged state. Inspect Anki before
+retrying; never interpret an error as proof that nothing was deleted.
 
 ### Media tools
 
