@@ -188,14 +188,18 @@ export function updateAnkiNoteTypeTemplates(
 /**
  * Replaces the CSS shared by all cards generated from one note type.
  */
-export function updateAnkiNoteTypeStyling(
+export async function updateAnkiNoteTypeStyling(
   modelName: string,
   css: string,
 ): Promise<null> {
-  return invokeAnki<null>("updateModelStyling", {
+  const result = await invokeAnki<unknown>("updateModelStyling", {
     model: {
       name: modelName,
       css,
     },
   });
+  if (result !== null) {
+    throw new Error("AnkiConnect returned an invalid CSS update acknowledgement");
+  }
+  return null;
 }

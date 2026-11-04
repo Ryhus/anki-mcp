@@ -539,6 +539,22 @@ The update tools default to `dryRun: true`. A safe design-editing workflow is:
 3. Review the dry-run validation errors, warnings, and before/after hashes.
 4. Repeat the same update with `dryRun: false`.
 
+`update-note-type-styling` reports `applied: true` only after Anki acknowledges
+the write and a fresh design read confirms the exact CSS, the same Note Type
+ID, and unchanged Card Template names/order/front/back HTML. Success returns
+the verified `afterHash`; a dry run still returns a proposed hash without
+writing. An already-matching CSS value skips the write and extra readback.
+Whitespace and Unicode are compared exactly, not reformatted automatically.
+
+A write error, invalid acknowledgement, unreadable design, or unexpected saved
+CSS/templates returns an MCP error rather than a successful change report.
+The message distinguishes an unconfirmed write from an acknowledged write
+whose verification failed. Either can follow an applied change: inspect the
+current design before retrying. No automatic retry, rollback, or backup is
+created. Pre-read, write, and readback are not atomic; this verifies a saved
+HTML/CSS snapshot, not visual rendering or every Note Type property. Tool
+parameters and success response fields are unchanged.
+
 To create a separate design, call `clone-note-type` in dry-run mode, then
 repeat it with `dryRun: false` and the returned source design hash. The clone
 can be styled independently and used as `modelName` when creating new notes.
