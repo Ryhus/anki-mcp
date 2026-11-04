@@ -16,7 +16,7 @@ const getCardDetailsInputSchema = z.object({
     .boolean()
     .default(false)
     .describe(
-      "Include rendered question and answer HTML. CSS is never returned.",
+      "Include rendered question and answer HTML, which may contain Anki's embedded styles. No separate CSS field is returned; use get-card-preview for HTML/CSS documents.",
     ),
 });
 

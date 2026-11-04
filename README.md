@@ -154,7 +154,7 @@ The server uses MCP TypeScript SDK v2, pinned to
 The old monolithic SDK package is no longer required. Zod is pinned to 4.6.7;
 SDK-bound schemas use Zod's Standard Schema and JSON Schema support.
 
-`mcp/create-server.ts` builds a fresh server and registers all 44 tools without
+`mcp/create-server.ts` builds a fresh server and registers all 45 tools without
 starting a transport or contacting Anki. `mcp/stdio.ts` hosts that factory with
 `serveStdio`, serving both the `2026-07-28` revision and legacy `initialize`
 clients. Integration tests explicitly exercise `2025-11-25` and `2026-07-28`.
@@ -231,6 +231,8 @@ The server currently exposes tools for:
   scheduling summaries.
 - `get-card-details` returns note fields and normalized scheduling data for
   selected cards.
+- `get-card-preview` returns Anki-rendered HTML, shared CSS, and restricted
+  standalone HTML documents for one existing card, in light or dark mode.
 - `get-card-review-history` returns bounded, newest-first review history.
 - `set-card-suspension` suspends or unsuspends cards.
 - `set-card-flag` safely applies one of Anki's supported flag colors.
@@ -241,6 +243,69 @@ The server currently exposes tools for:
 Low-level scheduling field and ease-factor setters are not exposed to MCP
 clients. Answering cards is also deferred to a future user-driven review
 workflow so an LLM cannot create review history on the user's behalf.
+
+#### Static HTML/CSS preview
+
+Find an existing card with `search-cards`, or use a Card ID returned by
+`create-notes` or `get-note-details`, then call:
+
+```json
+{
+  "cardId": 1234567890000,
+  "side": "both",
+  "theme": "light"
+}
+```
+
+`side` accepts `front`, `back`, or `both` (the default). `theme` accepts `light`
+(the default) or `dark`. The tool makes one `cardsInfo` request and does not
+open Anki's reviewer, answer cards, or change scheduling, Notes, or Note Types.
+Anki itself substitutes fields, filters, conditional sections, and cloze
+content; the MCP server does not implement its own template renderer.
+
+The result contains `exists` and a nullable `preview`. An existing card's
+preview includes its Note ID, Note Type, deck, template ordinal, exact shared
+CSS, and selected sides. Each side contains:
+
+- `html`: the **unmodified, untrusted** HTML returned by Anki;
+- `document`: a standalone restricted HTML document containing that side and CSS;
+- `removedElementCount` and `removedAttributeCount`: counts of removed elements
+  and attributes in the document copy (a removed subtree counts as one element).
+
+The server does not write preview files, create backups, start a browser, or
+install a browser engine. A client can save `document` as an `.html` file and
+open it as a separate document in a viewer that honors Content Security Policy.
+For embedding, use a sandboxed iframe without script, same-origin, or navigation
+permissions. Never insert `document`, raw `html`, or `css` as innerHTML in a
+privileged application page. Retained CSS relies on CSP to block URL loads.
+
+Documents preserve common text, table, ruby, layout, and inline-style markup,
+but remove scripts, event handlers, embeds, links' URL attributes, and media
+sources. Form controls are disabled. A CSP additionally blocks resource
+loading, JavaScript, frames, navigation base URLs, and form submissions.
+No media bytes or external URLs are fetched by this tool. Images, custom fonts,
+audio/video, MathJax, interactive hints, and JavaScript-driven layouts may be
+missing or nonfunctional. Raw source is retained so the LLM can inspect these
+features without executing them.
+
+The body receives `.card` and `.cardN` classes (`N = templateOrdinal + 1`),
+plus `.nightMode` and `.night_mode` in dark mode. Dark mode does not override
+colors explicitly set by the Note Type. No platform-specific classes or Anki
+reviewer runtime are emulated, so this is not a pixel-exact reviewer screenshot.
+
+The combined UTF-8 size of CSS and selected raw sides is limited to 256 KiB.
+Oversized source is rejected rather than silently truncated; selecting a single
+side may help. Missing CSS also fails instead of returning a misleading preview.
+
+The intended LLM workflow is to inspect the current design, preview and apply
+an approved HTML/CSS edit with the existing revision guards, then request
+`get-card-preview` again on representative real cards. It can compare populated
+HTML, cloze content, CSS, and theme classes. This first version **does not let
+an LLM see a rendered image**, detect pixel-level layout problems, or preview
+unapplied template drafts. PNG screenshots and embedded media are later steps.
+
+See the official [Anki styling documentation](https://docs.ankiweb.net/templates/styling.html)
+for card classes, night mode, and shared Note Type CSS.
 
 ### Deck tools
 

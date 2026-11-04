@@ -4,6 +4,7 @@ import {
   getCardDetails,
   getCardDetailsConfig,
 } from "./get-card-details.js";
+import { getCardPreview, getCardPreviewConfig } from "./get-card-preview.js";
 import {
   getCardReviewHistory,
   getCardReviewHistoryConfig,
@@ -40,6 +41,11 @@ export function registerCardTools(server: McpServer): void {
     "get-card-review-history",
     getCardReviewHistoryConfig,
     withToolErrorHandling(getCardReviewHistory),
+  );
+  server.registerTool(
+    "get-card-preview",
+    getCardPreviewConfig,
+    withToolErrorHandling(getCardPreview),
   );
   server.registerTool(
     "set-card-suspension",
