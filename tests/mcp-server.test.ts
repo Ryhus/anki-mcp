@@ -26,7 +26,7 @@ const EXPECTED_TOOLS = [
   "get-note-details", "validate-note-drafts", "create-notes", "update-note-fields",
   "edit-note-tags", "list-tags", "delete-notes-and-cards", "search-media-files",
   "get-media-file", "store-media-file", "find-media-references",
-  "attach-media-to-notes", "detach-media-from-notes", "delete-media-file",
+  "attach-media-to-notes", "detach-media-from-notes", "delete-media-file", "get-study-stats",
 ].sort();
 
 const PNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";

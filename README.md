@@ -287,6 +287,18 @@ The server currently exposes tools for:
 - storing, inspecting, attaching, detaching, and deleting media;
 - inspecting, cloning, and redesigning note types.
 
+### Study statistics
+
+`get-study-stats` is a read-only, collection-wide count of actual reviews
+today and recent days with review activity. `limitDays` defaults to 30 and
+counts returned active days, not elapsed calendar days. Rows are newest
+first, days with no reviews are omitted, and `hasMore` indicates truncation.
+`reviewedToday` follows Anki's configured study-day boundary, not the MCP
+host's midnight. V1 also returns `todayDate` and `nextDayAt`; legacy returns
+`null` for those values because its count endpoint does not supply them.
+The two native counts are separate reads, so a review or day rollover can
+occur between them. For current scheduling counts by deck use `get-deck-stats`.
+
 ### Card tools
 
 - `search-cards` searches with Anki query syntax and returns a bounded page of
