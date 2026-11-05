@@ -14,6 +14,8 @@ import { updateNoteFieldsConfig } from "../mcp/tools/notes/update-note-fields.js
 
 const EXPECTED_TOOLS = [
   "list-decks", "create-deck", "rename-deck", "get-deck-stats", "get-card-decks",
+  "list-deck-presets", "get-deck-preset", "create-deck-preset", "update-deck-preset",
+  "assign-deck-preset", "delete-deck-preset",
   "move-cards-to-deck", "delete-deck-and-cards", "search-cards",
   "get-card-details", "get-card-preview", "get-card-review-history", "set-card-suspension",
   "set-card-flag", "reschedule-cards", "reset-cards-to-new",

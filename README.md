@@ -451,9 +451,41 @@ the profile, subtree and destination parent; the server verifies paths and
 preset assignments by deck ID after the rename. Concurrent changes may
 still race the final write. This tool requires `ANKI_API_MODE=v1`.
 
-Low-level deck configuration ID operations are not exposed to MCP clients.
-Deck option management will be added separately after its behavior has been
-validated against current Anki versions.
+#### Deck presets (v1)
+
+- `list-deck-presets` lists presets and the number of decks using each.
+- `get-deck-preset` reads settings and usage by preset ID or normal deck ID.
+- `create-deck-preset` creates an unassigned preset from Anki defaults or
+  clones one selected by `cloneFromPresetId`.
+- `update-deck-preset` previews a preset rename or settings patch and the
+  full set of dependent decks.
+- `assign-deck-preset` previews a change for explicitly selected normal
+  deck IDs. Descendants are not included automatically.
+- `delete-deck-preset` deletes only an unused, non-Default preset. It never
+  reassigns decks implicitly.
+
+Example preview:
+
+```json
+{"presetId":1,"settings":{"newPerDay":20,"reviewsPerDay":200,"desiredRetention":0.9}}
+```
+
+Apply updates and assignments with `dryRun: false`, the reviewed
+`expectedImpactHash`, and `confirmChanges: true`. Deletion uses
+`confirmDeletion: true` instead. These hashes bind the proposal to the
+profile, current preset settings, and relevant deck assignments. Review a
+new preview if they change. The final read and native write are not atomic.
+The tools wait for native completion and read
+the saved state back. A failed or timed-out operation may have already
+changed Anki; there is no replay or rollback.
+
+Editable options are daily new/review limits, learning/relearning steps in
+minutes, maximum interval, FSRS desired retention, and the three burying
+flags. Reads show other settings, but raw FSRS weights and collection-wide
+settings are not writable through these tools. Changing a shared preset
+affects all dependent decks; per-deck overrides can still apply. The tools
+do not request full FSRS rescheduling or predict individual due dates,
+but native Anki updates can affect dependent learning state.
 
 Some AnkiConnect versions report `Deck counts unavailable.` when Anki omits
 the empty default deck from its scheduler tree. `get-deck-stats` isolates the
