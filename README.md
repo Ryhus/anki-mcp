@@ -1,202 +1,51 @@
-# Anki MCP Server
+# Anki MCP
 
-An MCP server that exposes Anki operations to MCP-compatible clients. It
-communicates with Anki through an AnkiConnect-compatible HTTP API and uses
-standard input/output (`stdio`) as its MCP transport.
+Anki MCP lets a local MCP client work with Anki Desktop through AnkiConnect. It
+can search and create notes, manage decks and scheduling, edit card designs,
+work with media, and import or export deck packages. Destructive workflows
+such as deleting a deck show their impact before applying changes.
 
-## Requirements
+The client launches this server over **stdio**. AnkiConnect's HTTP address
+is where the server talks to Anki; it is **not** an MCP URL. This project
+does not expose a remote HTTP MCP endpoint.
 
-- Node.js 24.15.0, as specified in `.nvmrc`
-- npm
-- Anki running with an AnkiConnect-compatible API available
+- [Quick start](#quick-start)
+- [Configuration](#configuration)
+- [Tools and workflows](#tools-and-workflows)
+- [Troubleshooting](#troubleshooting)
+- [Development and releases](#development-and-releases)
 
-If you use `nvm`, select the project Node.js version with:
+## Quick start
 
-```bash
-nvm install
-nvm use
-```
+You need **Node.js 24 or newer**, npm, [Anki Desktop](https://apps.ankiweb.net/),
+and an MCP client that can launch local stdio servers. Development and CI
+use Node.js **24.15.0** from `.nvmrc`.
 
-## Installation
+In Anki, install the [AnkiConnect add-on](https://ankiweb.net/shared/info/2055492159)
+using **Tools → Add-ons → Get Add-ons** and code `2055492159`, then restart
+Anki and keep it open. Use an AnkiConnect build that serves API v1 for the
+full tool set. See [Troubleshooting](#troubleshooting) for a connection check.
 
-Install the project dependencies from the repository root:
+### Run from source
 
-```bash
-npm install
-```
-
-## Environment configuration
-
-Create a `.env` file in the repository root:
-
-```dotenv
-ANKI_URL=http://127.0.0.1:8765
-
-# Optional: use AnkiConnect API v1 for all tools (default: legacy).
-# ANKI_API_MODE=v1
-
-# Optional: queue wait + full AnkiConnect HTTP request deadline (milliseconds)
-# ANKI_REQUEST_TIMEOUT_MS=30000
-
-# Optional: ":"-separated on macOS/Linux and ";"-separated on Windows
-# ANKI_MEDIA_IMPORT_DIRS=/absolute/path/to/media
-
-# Optional: opt in to local .apkg import and export separately.
-# ANKI_PACKAGE_IMPORT_DIR=/absolute/path/to/imports
-# ANKI_PACKAGE_EXPORT_DIR=/absolute/path/to/exports
-```
-
-`ANKI_URL` must point directly to the HTTP(S) endpoint exposed by AnkiConnect,
-without embedded URL credentials. API redirects are not followed. The example
-uses its usual local address; change it if your AnkiConnect instance uses a
-different host or port.
-
-`ANKI_API_MODE=v1` runs all tools through
-[AnkiConnect API v1](https://git.sr.ht/~foosoft/anki-connect/blob/master/API_V1.md).
-Keep `ANKI_URL` at the base endpoint, without `/api/v1`; the server appends
-that path for JSON-RPC calls. Set the variable in the MCP client's
-environment or in `.env`, then restart the MCP server. The root legacy
-endpoint is not needed in v1 mode. Without the variable, the default
-`legacy` mode continues to use version 6 for older add-ons.
-
-In v1 mode, multi-step tools pin native requests to one collection session
-per invocation. Session checks stop subsequent steps after a profile switch;
-they do not roll back a previously completed step. A v1 failure never
-triggers a legacy fallback or a write retry. MCP tool names and numeric IDs
-are unchanged; out-of-range upstream IDs are rejected rather than rounded.
-Both modes share the same request limiter and timeout. If the installed
-add-on does not serve v1, upgrade AnkiConnect or select `legacy` explicitly.
-
-`ANKI_REQUEST_TIMEOUT_MS` is optional and defaults to **30,000 ms (30 seconds)**.
-It must be an integer from 1 to 300,000 ms; `0` does not disable the deadline.
-The deadline includes waiting for a request slot, connecting, waiting for
-headers, and loading the JSON response body. It is not restarted when a slot
-becomes available. As with other JavaScript timers, it cannot interrupt
-synchronous CPU work while the event loop is blocked. Each AnkiConnect HTTP
-request gets its own deadline: a tool that makes several requests can take longer overall. A
-`multi` batch in legacy mode shares one HTTP deadline. In v1 mode, internal
-read groups run as separate native requests in one session. Neither is a
-transaction. Set the
-MCP client's tool timeout accordingly; the client may stop waiting sooner.
-This setting does not change the separate timeout for public HTTPS media downloads.
-
-All AnkiConnect HTTP calls in one Node.js process share a **four-request
-concurrency limit**, including calls from different tools or server factories.
-Excess requests wait in FIFO order; a legacy `multi` batch uses one slot for
-its entire HTTP exchange. A slot remains held through body loading, then is
-returned on completion/failure or explicit transport abort. Timed-out and
-cancelled waiters are removed and never sent later. No extra tool parameters
-or dependencies are required, and the limit is fixed in this release.
-Cancellation here refers to a low-level request `signal`; MCP client
-cancellation is not automatically forwarded to that signal.
-
-If the deadline/cancellation occurs before sending, `AnkiRequestError` has
-`mayHaveExecuted: false` and the message states that no HTTP request was sent.
-After sending, the outcome may be unknown. This is a client-side limit, not a
-limit on Anki's background work or on other apps/processes connecting to Anki.
-Socket cleanup may be asynchronous; an adapter that ignores abort can finish
-late, but its response is discarded. A broken adapter cannot keep a slot
-forever after the client's deadline. The queue does not serialize entire MCP
-tools, create transactions, or prevent interleaving of multi-step operations.
-
-Requests are **never automatically retried**. A timeout, cancellation, or bad
-response after sending does not prove that an operation failed: Anki may have
-already changed data. Stopping HTTP does not cancel/roll back work inside Anki.
-Inspect the current state before retrying any mutation; obtain a fresh preview
-and hash where the tool requires them.
-
-`ANKI_MEDIA_IMPORT_DIRS` is optional. When set, `store-media-file` accepts
-`localPath` sources only when their resolved path is inside one of these
-directories. Local file imports are disabled when the variable is omitted.
-Base64 and public HTTPS sources do not require it.
-
-`ANKI_PACKAGE_IMPORT_DIR` and `ANKI_PACKAGE_EXPORT_DIR` independently enable
-the deck package tools. Each must point to an existing, trusted absolute
-directory. MCP and AnkiConnect must run on the same machine with access to
-the same filesystem paths. These tools accept only local loopback endpoints
-and require `ANKI_API_MODE=v1`.
-
-## Development commands
-
-### Start the development server
+Clone the repository and check out the version you want to run:
 
 ```bash
-npm run dev
+git clone https://github.com/Ryhus/anki-mcp.git
+cd anki-mcp
 ```
 
-Runs the source entry point with `tsx` and watches the project for changes.
-The server is restarted automatically after a source file changes.
-
-### Check TypeScript types
-
-```bash
-npm run typecheck
-```
-
-Runs the TypeScript compiler without generating output. It checks both the
-application source and the tests. Use this command frequently while changing
-types or migrating a file.
-
-### Run tests
+Use a release tag for a released version, or switch to `develop` for
+unreleased development. If you use nvm, run `nvm install` and `nvm use`
+from the checkout. Then install dependencies and build:
 
 ```bash
-npm test
-```
-
-Runs unit tests and MCP integration tests, including both supported protocol
-eras, JSON Schema compilation, native media content, stdio child processes,
-large requests, and shutdown. Tests use mocked AnkiConnect responses and local
-fake HTTP servers (including stalled headers/bodies and redirects). They do not
-require or modify a running Anki collection.
-
-### Build the project
-
-```bash
+npm ci
 npm run build
 ```
 
-Compiles the application source tree with `tsconfig.build.json` into `dist/`.
-Tests are type-checked but are not included in the published build. The
-generated directory is cleared first, then rebuilt to mirror the source
-structure and include source maps.
-
-The compiler does not write partial output when type errors are present.
-
-### Start the compiled server
-
-```bash
-npm start
-```
-
-Runs `dist/mcp/server.js`. Build the project before using this command:
-
-```bash
-npm run build
-npm start
-```
-
-## Recommended development workflow
-
-1. Start Anki and make sure its API is available.
-2. Create the local `.env` file.
-3. Run `npm run dev`.
-4. Make the required source changes.
-5. Run `npm test`.
-6. Run `npm run typecheck`.
-7. Run `npm run build`.
-8. Test the affected tools through an MCP client connected to the server.
-
-## Connecting an MCP client
-
-Build the server first:
-
-```bash
-npm run build
-```
-
-Then configure your MCP client to launch the compiled entry point. The exact
-configuration format depends on the client, but a typical configuration looks
-like this:
+Configure your MCP client to start the compiled server. This is a common
+stdio configuration shape; use the equivalent fields in your client:
 
 ```json
 {
@@ -205,1231 +54,647 @@ like this:
       "command": "node",
       "args": ["/absolute/path/to/anki-mcp/dist/mcp/server.js"],
       "env": {
-        "ANKI_URL": "http://127.0.0.1:8765"
+        "ANKI_URL": "http://127.0.0.1:8765",
+        "ANKI_API_MODE": "v1"
       }
     }
   }
 }
 ```
 
-Replace `/absolute/path/to/anki-mcp` with the actual repository path.
+Replace the script path with your actual path. If the desktop app does not
+inherit your shell's PATH, use the absolute path to the Node executable in
+`command` and keep the script path in `args`.
 
-The server uses `stdio`, so normal application output must not be written to
-standard output. Diagnostic messages should be written with `console.error`
-to avoid corrupting MCP protocol messages.
+### Run from npm once published
 
-## MCP SDK and protocol compatibility
-
-The server uses MCP TypeScript SDK v2, pinned to
-`@modelcontextprotocol/server` 2.4.0. The matching
-`@modelcontextprotocol/client` package is a development dependency for tests.
-The old monolithic SDK package is no longer required. Zod is pinned to 4.6.7;
-SDK-bound schemas use Zod's Standard Schema and JSON Schema support.
-
-`mcp/create-server.ts` builds a fresh server and registers all 45 tools without
-starting a transport or contacting Anki. `mcp/stdio.ts` hosts that factory with
-`serveStdio`, serving both the `2026-07-28` revision and legacy `initialize`
-clients. Integration tests explicitly exercise `2025-11-25` and `2026-07-28`.
-The launch command and `ANKI_URL` configuration are unchanged.
-
-The SDK's default stdio read-buffer limit is 10 MB. This project sets a
-**40 MiB inbound buffer limit**, allowing a 25 MiB media file to be sent as
-roughly 33.4 MiB of base64 plus JSON overhead. This is a transport-wide limit
-for the complete buffered request, separate from each tool's input limits.
-An oversized buffer causes an error and closes the connection; reconnect with
-a smaller request. Client applications may impose smaller limits of their own.
-URL and allowed local-path media imports avoid sending the file's bytes in
-the MCP request, but retain the same 25 MiB media-file limit.
-
-When the client closes stdin, the SDK tears down the connection and the server
-exits naturally once pending work no longer keeps the process alive. `SIGINT`
-and `SIGTERM` also close the stdio handle. Closing the connection does not roll
-back Anki operations that have already been sent.
-
-See the official [SDK v2 migration guide](https://ts.sdk.modelcontextprotocol.io/v2/migration/upgrade-to-v2)
-and [stdio serving guide](https://ts.sdk.modelcontextprotocol.io/v2/serving/stdio.html).
-
-## Project structure
-
-```text
-.
-├── anki-api/
-│   ├── anki-request.ts       # HTTP client for AnkiConnect
-│   ├── cards/
-│   │   ├── card-client.ts    # Typed AnkiConnect card operations
-│   │   └── card-types.ts     # AnkiConnect card response types
-│   ├── decks/
-│   │   ├── deck-client.ts    # Typed AnkiConnect deck operations
-│   │   └── deck-types.ts     # AnkiConnect deck response types
-│   ├── media/
-│   │   ├── media-client.ts   # Typed AnkiConnect media operations
-│   │   └── media-types.ts    # AnkiConnect media request/response types
-│   ├── notes/
-│   │   ├── note-client.ts    # Typed AnkiConnect note operations
-│   │   └── note-types.ts     # AnkiConnect note response types
-│   └── note-types/
-│       ├── note-type-client.ts # Typed note-type discovery and design operations
-│       └── note-type-types.ts  # AnkiConnect note-type response types
-├── mcp/
-│   ├── server.ts             # MCP server entry point
-│   ├── create-server.ts      # Transport-independent server factory
-│   ├── stdio.ts              # Protocol compatibility, input limit, and stdio hosting
-│   ├── tools/
-│   │   ├── cards/            # Card tool contracts and handlers
-│   │   ├── collection/       # Collection information, maintenance, and operation status
-│   │   ├── decks/            # Deck tool contracts and handlers
-│   │   ├── media/            # Media storage, inspection, and reference tools
-│   │   ├── notes/            # Note tool contracts and handlers
-│   │   └── note-types/       # Note-type discovery and HTML/CSS tools
-│   └── utils/
-│       ├── tool-annotations.ts # Shared MCP behavior annotations
-│       ├── tool-handler.ts   # Shared tool error handling
-│       └── tool-result.ts    # Structured MCP result creation
-├── dist/                     # Generated build output
-├── package.json
-└── tsconfig.json
-```
-
-The server currently exposes tools for:
-
-- listing, creating, deleting, and inspecting decks;
-- finding, inspecting, moving, suspending, and reviewing cards;
-- creating, finding, updating, tagging, and deleting notes;
-- storing, inspecting, attaching, detaching, and deleting media;
-- inspecting, cloning, and redesigning note types.
-
-### Collection tools (v1)
-
-- `get-collection-info` reads the active profile, scheduler (`sm2` or
-  `fsrs`), and opaque collection session. It does not export notes or cards.
-- `refresh-collection` refreshes open Anki windows. The default `target`
-  is `windows`; `cachesAndWindows` also invalidates AnkiConnect's supported
-  Note Type cache. This does not reopen, sync, or repair the database.
-- `sync-collection` uses the sync server configured in Anki. `includeMedia`
-  defaults to `true`, but media sync must also be enabled in the profile.
-  A full sync may require a decision in Anki's window. MCP never chooses
-  the direction or starts a second sync while tracking the first one.
-- `check-collection-integrity` runs native **Tools → Check Database** and
-  reports Anki's result. The operation can repair data and clears Undo
-  history; the tool does not create a backup.
-- `undo-collection-action` undoes the currently undoable Anki action. The
-  API does not let MCP inspect or select that entry in advance. Do not edit
-  or study between preview and confirmation. Undo may revert a manual action,
-  so never use this tool as automatic rollback of an MCP call.
-- `get-collection-operation` reports the status and eventual result of a
-  submitted sync, integrity check, or Undo. It never starts another operation.
-- `cancel-collection-operation` requests cancellation of an operation started
-  by this running MCP server. Pass the returned `operationId` only when the
-  user asks to stop it.
-
-Sync, integrity checks, and Undo default to `dryRun: true`. The preview
-identifies the profile and request but does not contact the sync server,
-check the database, or predict what Undo will revert. To apply, have the user
-review the preview, then send the same options with `dryRun: false`,
-`confirm: true`, and the returned `confirmationToken`. The token expires in
-120 seconds, is tied to the collection session and proposal, and is consumed
-before submission. It is not authentication or proof of human approval.
-
-A submitted request returns an `operationId`, not a success result. Pass
-the ID to `get-collection-operation` on the same running MCP server. For
-`waitingForUser`, respond in the Anki desktop window and check the same ID
-again. Check for terminal status before starting another collection operation.
-Full sync can change the active session, but status still follows the
-original operation. If a submission's acknowledgement is lost, MCP does
-not retry; inspect Anki and restart MCP before starting another operation.
-
-For example, call `cancel-collection-operation` with
-`{"operationId":"<id from the submitted operation>"}`, then check that same
-ID with `get-collection-operation`. `requested: true` acknowledges the
-request, not the outcome. A queued operation can be stopped before it
-starts; a running operation may not support cancellation or may finish
-first. `requested: false` means it was already finished. Cancellation does
-not roll back changes already made. If a cancellation reply is lost, check
-the status instead of sending it again. When Anki is showing a full-sync
-dialog, you can also choose Cancel in Anki.
-
-### Study statistics
-
-`get-study-stats` is a read-only, collection-wide count of actual reviews
-today and recent days with review activity. `limitDays` defaults to 30 and
-counts returned active days, not elapsed calendar days. Rows are newest
-first, days with no reviews are omitted, and `hasMore` indicates truncation.
-`reviewedToday` follows Anki's configured study-day boundary, not the MCP
-host's midnight. V1 also returns `todayDate` and `nextDayAt`; legacy returns
-`null` for those values because its count endpoint does not supply them.
-The two native counts are separate reads, so a review or day rollover can
-occur between them. For current scheduling counts by deck use `get-deck-stats`.
-
-`get-study-summary` is a read-only aggregate for the whole collection
-(`{}`) or one deck and its subdecks (`{"deckId":1234567890123}`). Find the
-deck ID with `list-decks`. This tool requires `ANKI_API_MODE=v1`.
-
-- `cardCount` includes existing cards in scope; `noteCount` counts distinct
-  Notes linked to those cards. Cardless Notes do not count.
-- `reviewCount` and `reviewTimeMs` describe recorded answers across the
-  available history, not the number due today or time spent in the app.
-- `newCount`, `learningCount`, `reviewCardCount`, and `suspendedCount`
-  are Anki's current card categories, not daily queue limits. Buried cards
-  are not returned as a separate category, so these counts need not add up
-  to `cardCount`.
-
-### Card tools
-
-- `search-cards` searches with Anki query syntax and returns a bounded page of
-  scheduling summaries.
-- `get-card-details` returns note fields and normalized scheduling data for
-  selected cards.
-- `get-card-preview` returns Anki-rendered HTML, shared CSS, and restricted
-  standalone HTML documents for one existing card, in light or dark mode.
-- `predict-card-intervals` previews native scheduler intervals for Again,
-  Hard, Good, and Easy without answering the card. Requires AnkiConnect v1.
-- `get-card-due-status` checks one card's due time and per-card availability,
-  with optional learn-ahead. Requires AnkiConnect v1.
-- `get-card-review-history` returns bounded, newest-first review history.
-- `set-card-suspension` suspends or unsuspends cards.
-- `set-card-flag` safely applies one of Anki's supported flag colors.
-- `reschedule-cards` changes due dates with Anki's Set Due Date syntax.
-- `reset-cards-to-new` resets card scheduling progress.
-- `start-card-relearning` starts relearning for active Review cards and reports
-  which entered Relearning, returned directly to Review, or were suspended.
-
-With v1, `search-cards` uses the same [cursor options as Note search](#note-tools).
-For Card summaries, `isDue` uses Anki's native New or Due search and excludes
-suspended and buried Cards, rather than interpreting legacy review-log intervals.
-Rendered content is requested from Anki only for previews or when explicitly
-requested in Card details.
-
-With `ANKI_API_MODE=v1`, call `predict-card-intervals` with one ID, for example
-`{"cardId":1234567890123}`. The result includes Anki's localized label for
-each answer and an interval in seconds or days, or `null` if Anki does not
-provide a numeric interval. This is a scheduler snapshot, not an exact due
-date, a check that the card can be reviewed now, or the custom state of an
-open Anki reviewer. The tool does not submit answers, change scheduling,
-write review history, or expose Anki's internal answer token.
-
-With `ANKI_API_MODE=v1`, call `get-card-due-status` with
-`{"cardId":1234567890123}` for the current status. `dueNow` reports a
-scheduled time or study day that has arrived; a new card can have
-`dueNow: false` and `available: true`. `learnAhead` reports whether a
-not-yet-due card is within Anki's configured learn-ahead window. That flag
-is independent of the request option: `includeLearnAhead: true` allows such
-a card to count as `available` without changing `dueNow`. The option defaults
-to false. This is a read-only, per-card check: `available` does not account for
-daily deck limits or promise that the card is next in the reviewer.
-
-Low-level scheduling field and ease-factor setters are not exposed to MCP
-clients. A general-purpose answer/reviewer tool is not exposed. However,
-`start-card-relearning` can perform an **Again answer** in current AnkiConnect,
-adding review history and changing repetition/lapse counts. Treat it as a study
-action, not a harmless metadata edit. Anki may skip the relearning queue when
-no steps are configured, or suspend a leech. See Anki's
-[relearning options](https://docs.ankiweb.net/manual/deck-options#relearning-steps).
-
-#### Verified Card changes
-
-The five Card mutation tools require every requested Card to exist and be
-readable before writing; a missing/incomplete Card blocks the whole selection.
-Duplicate input IDs are processed once. These tools apply immediately: this
-workflow does not add `dryRun`, revision hashes, or an approval dialog.
-
-- Suspension and flag changes skip Cards already in the requested state. When
-  a write is needed, `cardsInfo` verifies the desired state of the full selection.
-  AnkiConnect's `suspend` boolean (including `false` for no change) and legacy
-  `unsuspend` null acknowledgement are handled separately from verification.
-- Due-date changes require a positive `setDueDate` acknowledgement, then verify
-  Review state and the requested date/range with Anki's native `prop:due` search.
-  This uses Anki's scheduler day/rollover, not the MCP host's date. Intervals are
-  managed by the current scheduler/FSRS; no exact interval or random day is
-  predicted. Offsets must be ascending nonnegative 32-bit integers.
-- Reset checks New type/queue, zero interval, and reset ease factor.
-  It does **not** promise to erase review history or repetition/lapse counts;
-  Anki may record a reset entry, restore a previous new-card position, or retain
-  a stale internal `left` value that is inactive once the Card is New.
-- Relearning accepts only active Review Cards. Verification distinguishes an
-  actual Relearning queue from an immediate return to Review or leech
-  suspension. The latter outcomes also require increased repetition/lapse
-  counts so an unchanged Review Card cannot masquerade as a successful lapse.
-
-Flag writes are sequential. A failed write stops later writes and reports
-acknowledged-but-unverified and not-attempted IDs; failures are not silently
-collected into a successful result. Existing success response fields are kept;
-`start-card-relearning` additionally returns `reviewCardIds` and
-`suspendedCardIds`. `failedCardIds` is empty on verified flag success; failure
-is an MCP error instead of a normal success response.
-
-Readback checks Card identity and operation-specific state, not every Card
-field or all historical side effects. It is a point-in-time check, not an
-atomic transaction. A concurrent edit, scheduler rollover, or read failure may
-prevent verification even after a write succeeded. Errors state that changes
-may already be applied; there is no automatic retry, rollback, or MCP backup.
-Reset and relearning are marked non-idempotent because Anki may log actions.
-
-#### Static HTML/CSS preview
-
-Find an existing card with `search-cards`, or use a Card ID returned by
-`create-notes` or `get-note-details`, then call:
+Once `@ryhus/anki-mcp@0.1.0` is published, a client can run the package's
+`anki-mcp` executable without cloning or compiling the repository. The
+example pins the version so updates do not change the server unexpectedly:
 
 ```json
 {
-  "cardId": 1234567890000,
-  "side": "both",
-  "theme": "light"
+  "mcpServers": {
+    "anki": {
+      "command": "npx",
+      "args": ["--yes", "--package=@ryhus/anki-mcp@0.1.0", "anki-mcp"],
+      "env": {
+        "ANKI_URL": "http://127.0.0.1:8765",
+        "ANKI_API_MODE": "v1"
+      }
+    }
+  }
 }
 ```
 
-`side` accepts `front`, `back`, or `both` (the default). `theme` accepts `light`
-(the default) or `dark`. The tool makes one `cardsInfo` request and does not
-open Anki's reviewer, answer cards, or change scheduling, Notes, or Note Types.
-Anki itself substitutes fields, filters, conditional sections, and cloze
-content; the MCP server does not implement its own template renderer.
+The client needs both `npx` and Node.js on its PATH. If a desktop client
+cannot see your shell's Node installation, configure its PATH or use the
+source setup with the absolute path to Node. On Windows, use `npx.cmd` if
+your client requires the command shim. Until the package is published, use
+the source setup above.
 
-The result contains `exists` and a nullable `preview`. An existing card's
-preview includes its Note ID, Note Type, deck, template ordinal, exact shared
-CSS, and selected sides. Each side contains:
+### Verify the connection
 
-- `html`: the **unmodified, untrusted** HTML returned by Anki;
-- `document`: a standalone restricted HTML document containing that side and CSS;
-- `removedElementCount` and `removedAttributeCount`: counts of removed elements
-  and attributes in the document copy (a removed subtree counts as one element).
+Keep Anki open and reload your MCP client after changing its configuration.
+Start with a read-only request such as **“List my Anki decks without making
+any changes.”** The client should call `list-decks`. In v1 mode,
+`get-collection-info` also shows which profile and scheduler are active.
+Check the profile before creating or editing anything.
 
-The server does not write preview files, create backups, start a browser, or
-install a browser engine. A client can save `document` as an `.html` file and
-open it as a separate document in a viewer that honors Content Security Policy.
-For embedding, use a sandboxed iframe without script, same-origin, or navigation
-permissions. Never insert `document`, raw `html`, or `css` as innerHTML in a
-privileged application page. Retained CSS relies on CSP to block URL loads.
+## Configuration
 
-Documents preserve common text, table, ruby, layout, and inline-style markup,
-but remove scripts, event handlers, embeds, links' URL attributes, and media
-sources. Form controls are disabled. A CSP additionally blocks resource
-loading, JavaScript, frames, navigation base URLs, and form submissions.
-No media bytes or external URLs are fetched by this tool. Images, custom fonts,
-audio/video, MathJax, interactive hints, and JavaScript-driven layouts may be
-missing or nonfunctional. Raw source is retained so the LLM can inspect these
-features without executing them.
+Set variables in the MCP client's environment, as shown above. Alternatively,
+the server reads a `.env` file from the **working directory of the server
+process**, which may not be the directory containing the executable. In a
+source checkout, `.env.example` is a starting point. Restart the server
+after changing configuration.
 
-The body receives `.card` and `.cardN` classes (`N = templateOrdinal + 1`),
-plus `.nightMode` and `.night_mode` in dark mode. Dark mode does not override
-colors explicitly set by the Note Type. No platform-specific classes or Anki
-reviewer runtime are emulated, so this is not a pixel-exact reviewer screenshot.
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `ANKI_URL` | Required | AnkiConnect base HTTP(S) address, usually `http://127.0.0.1:8765`. Omit `/api/v1`; the server appends it in v1 mode. Redirects and credentials embedded in the URL are not supported. |
+| `ANKI_API_MODE` | `legacy` | Use `v1` for the full tool set. `legacy` uses AnkiConnect API version 6 for older add-ons. There is no automatic fallback between modes. |
+| `ANKI_REQUEST_TIMEOUT_MS` | `30000` | Deadline for an AnkiConnect HTTP exchange, including queue wait and response reading. Valid range: 1–300,000 ms. A tool making multiple requests can take longer. |
+| `ANKI_MEDIA_IMPORT_DIRS` | Unset | Allow `store-media-file` to read local source files only under the configured directories. Separate paths with `:` on macOS/Linux or `;` on Windows. Base64 and public HTTPS sources do not need this setting. |
+| `ANKI_PACKAGE_IMPORT_DIR` | Unset | Enable local `.apkg` imports from one existing, trusted absolute directory. |
+| `ANKI_PACKAGE_EXPORT_DIR` | Unset | Enable local `.apkg` exports to one existing, trusted absolute directory. |
 
-The combined UTF-8 size of CSS and selected raw sides is limited to 256 KiB.
-Oversized source is rejected rather than silently truncated; selecting a single
-side may help. Missing CSS also fails instead of returning a misleading preview.
+The package directories are independent. Both package tools require v1,
+an explicit loopback endpoint (`localhost`, `127.0.0.1`, or `[::1]`), and
+filesystem paths accessible to both Anki Desktop and the MCP process.
+Allowlist dedicated folders, not your home directory.
 
-The intended LLM workflow is to inspect the current design, preview and apply
-an approved HTML/CSS edit with the existing revision guards, then request
-`get-card-preview` again on representative real cards. It can compare populated
-HTML, cloze content, CSS, and theme classes. This first version **does not let
-an LLM see a rendered image**, detect pixel-level layout problems, or preview
-unapplied template drafts. PNG screenshots and embedded media are later steps.
+The server advertises the same tools in both API modes, but tools marked
+**v1** below require `ANKI_API_MODE=v1`. Keep AnkiConnect on a trusted
+interface: the MCP server can change your collection through that endpoint.
 
-See the official [Anki styling documentation](https://docs.ankiweb.net/templates/styling.html)
-for card classes, night mode, and shared Note Type CSS.
+### Previews, errors, and retries
+
+- `dryRun: true` is a preview, not a test write. It is the default for tools
+  that offer it, but **not every mutation has a preview**. Check the tool's
+  contract and review actions before making writes.
+- Apply only the proposal you reviewed, with the required hashes, counts,
+  token, and confirmation flags. If the scope changed or the result is
+  incomplete, get a new preview before applying. These safeguards are not
+  authentication and do not make a sequence of reads and writes atomic.
+- V1 multi-step workflows pin requests to one collection session. A profile
+  switch can stop later steps; it does not undo an earlier write.
+- A timeout or lost response can occur after Anki changed data. There is no
+  automatic write retry, rollback, or backup. Inspect Anki before resending.
+  Closing the MCP client or cancelling an HTTP exchange does not stop work
+  already running in Anki.
+
+## Tools and workflows
+
+The server currently advertises **73 tools**. Use the client's `tools/list`
+response for the complete input and output schemas. The IDs and names in the
+examples are illustrative; obtain the actual IDs and names from Anki.
 
 ### Deck tools
 
-- `list-decks` lists every deck with its ID and hierarchy metadata.
-- `create-deck` creates a deck or returns the existing deck with the same name.
-- `rename-deck` renames a deck or moves its subtree under an existing parent
-  using native AnkiConnect v1, preserving deck and card IDs.
-- `get-deck-stats` returns scheduler counts for selected or all decks.
-- `get-card-decks` groups card IDs by their current deck.
-- `move-cards-to-deck` moves cards and creates the target deck when necessary.
-- `delete-deck-and-cards` previews deletion of a normal deck and its complete
-  subtree, then requires a reviewed impact hash and explicit confirmation.
+- `list-decks` — lists deck IDs, full names, and hierarchy.
+- `create-deck` — creates a named deck or returns the existing one.
+- `rename-deck` (**v1**) — renames or moves a subtree while preserving deck
+  and card IDs. The destination parent must already exist and be a normal
+  deck. Preview `name` and `newName`, then apply with `dryRun: false`,
+  `confirmRename: true`, and `expectedImpactHash`.
+- `get-deck-stats` — reads scheduler counts for deck `names`, or all decks
+  when omitted. In v1, a deck missing from the scheduler tree is reported
+  with zero counts only when a native search confirms the subtree has no cards.
+- `get-card-decks` — groups card IDs by current deck.
+- `move-cards-to-deck` — moves selected cards, creating the target deck if needed.
+- `delete-deck-and-cards` — previews deletion of a normal deck and its
+  descendants. Apply only with the reviewed hash and explicit confirmation.
 
-`rename-deck` takes exact `name` and `newName` paths. It previews all affected
-paths and refuses collisions, moves into the source subtree, missing parents,
-and filtered destination parents. Apply with `dryRun: false`,
-`confirmRename: true`, and the reviewed `expectedImpactHash`. The hash covers
-the profile, subtree and destination parent; the server verifies paths and
-preset assignments by deck ID after the rename. Concurrent changes may
-still race the final write. This tool requires `ANKI_API_MODE=v1`.
+Use `::` between deck names, for example `Languages::German`. To preview a
+deletion, pass `{"name":"Languages::German"}`. Review the whole scope and any
+blockers before applying the same name with `dryRun: false`,
+`confirmDeletion: true`, and the reviewed `expectedImpactHash`.
+
+Deck deletion removes cards in the subtree and their history. A note with
+cards outside the subtree survives; shared note types and media files are not
+deleted. The tool blocks the built-in Default deck (ID `1`), filtered decks
+or cards borrowed into them, and any scope it cannot completely inspect.
+Review limits are 100 decks, 5,000 target cards, 1,000 affected notes, and
+10,000 cards referenced by those notes. Truncated samples do not truncate
+the hash. Success is reported only after readback verifies the reviewed
+deletion and expected survivors.
 
 #### Deck presets (v1)
 
-- `list-deck-presets` lists presets and the number of decks using each.
-- `get-deck-preset` reads settings and usage by preset ID or normal deck ID.
-- `create-deck-preset` creates an unassigned preset from Anki defaults or
-  clones one selected by `cloneFromPresetId`.
-- `update-deck-preset` previews a preset rename or settings patch and the
-  full set of dependent decks.
-- `assign-deck-preset` previews a change for explicitly selected normal
-  deck IDs. Descendants are not included automatically.
-- `delete-deck-preset` deletes only an unused, non-Default preset. It never
-  reassigns decks implicitly.
+- `list-deck-presets` — lists presets and how many decks use each one.
+- `get-deck-preset` — reads settings and usage by preset ID or normal deck ID.
+- `create-deck-preset` — creates an unassigned preset from native defaults,
+  or clones a preset selected by `cloneFromPresetId`.
+- `update-deck-preset` — previews a rename or settings patch and dependent decks.
+- `assign-deck-preset` — previews assigning a preset to explicit normal
+  deck IDs; descendants are not included automatically.
+- `delete-deck-preset` — deletes an unused, non-Default preset without
+  reassigning any decks.
 
-Example preview:
+Example `update-deck-preset` preview:
 
 ```json
-{"presetId":1,"settings":{"newPerDay":20,"reviewsPerDay":200,"desiredRetention":0.9}}
+{
+  "presetId": 1,
+  "settings": {
+    "newPerDay": 20,
+    "reviewsPerDay": 200,
+    "desiredRetention": 0.9
+  }
+}
 ```
 
-Apply updates and assignments with `dryRun: false`, the reviewed
+Apply an update or assignment with `dryRun: false`, the reviewed
 `expectedImpactHash`, and `confirmChanges: true`. Deletion uses
-`confirmDeletion: true` instead. These hashes bind the proposal to the
-profile, current preset settings, and relevant deck assignments. Review a
-new preview if they change. The final read and native write are not atomic.
-The tools wait for native completion and read
-the saved state back. A failed or timed-out operation may have already
-changed Anki; there is no replay or rollback.
+`confirmDeletion: true` instead. A shared preset can affect every listed
+deck. The tool does not request full FSRS rescheduling or predict individual
+due dates.
 
-Editable options are daily new/review limits, learning/relearning steps in
-minutes, maximum interval, FSRS desired retention, and the three burying
-flags. Display order also supports `newGatherOrder`, `newSortOrder`,
-`newMix`, `dayLearningMix`, and `reviewOrder`. Gathering selects new cards;
-sorting orders the cards already gathered. Anki uses these options from
-the deck selected for study. Some review sort orders depend on whether
-FSRS or SM-2 is active. See [Anki's display order guide](https://docs.ankiweb.net/manual/deck-options#display-order).
+Writable options include daily limits, learning/relearning steps, maximum
+interval, FSRS desired retention, burying, display order, and audio behavior.
+For example, `newMix: "afterReviews"` controls new/review mixing and
+`disableAutoplay: true` disables automatic audio playback. `waitForAudio`
+does not enable Auto Advance. Raw FSRS weights, new-card insertion order,
+and global Anki preferences are not writable through these tools.
+See [Anki's deck options](https://docs.ankiweb.net/manual/deck-options).
 
-Audio options are `disableAutoplay`, `skipQuestionOnAnswerReplay`, and
-`waitForAudio`. The last option only affects audio waiting during Auto
-Advance; it does not enable Auto Advance. For example:
+#### Deck packages (v1)
 
-```json
-{"presetId":1,"settings":{"newMix":"afterReviews","disableAutoplay":true}}
-```
+- `export-deck-package` — previews export of one normal deck and its
+  descendants. For example, use
+  `{"deckId":1234567890123,"fileName":"German.apkg"}`. Referenced media is
+  included; scheduling and review history require `includeScheduling: true`.
+  Deck presets are not exported. The preview covers at most 100 decks and
+  does not snapshot card content. Each export writes to a new subdirectory
+  and returns a verified path, byte count, and SHA-256 without overwriting
+  another file.
+- `import-deck-package` — previews a trusted regular `.apkg` file up to
+  512 MiB inside `ANKI_PACKAGE_IMPORT_DIR`. Pass its absolute `localPath`.
+  Preview checks the ZIP header and SHA-256; it does not parse the archive
+  or predict the changes to individual notes. On apply the reviewed bytes
+  are copied to a private temporary file. Anki can update existing notes or
+  merge note types; it imports scheduling and deck presets when present.
 
-Reads show other settings, but new-card insertion order, raw FSRS weights,
-and collection-wide settings are not writable through these tools.
-Changing a shared preset affects all dependent decks; per-deck overrides
-can still apply. The tools do not request full FSRS rescheduling or predict
-individual due dates, but native Anki updates can affect dependent learning
-state.
-
-Some AnkiConnect versions report `Deck counts unavailable.` when Anki omits
-the empty default deck from its scheduler tree. `get-deck-stats` isolates the
-per-deck results and returns zero counts only after native search confirms
-that the affected deck and its descendants contain no cards. Other errors,
-including unavailable counts for nonempty decks, remain errors.
-
-#### Safe deck deletion
-
-`delete-deck-and-cards` now defaults to `dryRun: true`. Old calls containing
-only `name` no longer delete anything. Use the exact root name from `list-decks`:
-
-```json
-{
-  "name": "Languages::German"
-}
-```
-
-Review `profileName`, `deck`, `impactComplete`, `impact`, `blockers`, and
-`warnings`. Descendants are included automatically. Impact counts distinguish
-deleted Cards, Notes that lose their last Card, and Notes/Cards preserved
-elsewhere. Samples contain up to 20 decks, Card IDs, and affected Notes;
-truncation flags identify omitted samples. Use the existing detail tools to
-inspect sampled IDs when needed. Unknown counts are `null`, not evidence of
-zero impact. Incomplete scopes have `impactHash: null`. A rejected stale apply
-request may return a new current hash; do not automatically reuse it without
-reviewing the changed impact and obtaining user approval.
-
-After the user approves the complete impact, apply with the reviewed hash:
-
-```json
-{
-  "name": "Languages::German",
-  "dryRun": false,
-  "expectedImpactHash": "<impactHash from the complete reviewed preview>",
-  "confirmDeletion": true
-}
-```
-
-Replace the placeholder with the actual 64-character lowercase hash. Before
-writing, the server reloads the subtree, Card placement, and affected Notes.
-The hash includes the active profile, every deck ID/name, all target Card IDs
-and their current deck assignments, and full affected Note snapshots (fields,
-HTML, field order, tags, modification times, and all sibling Card IDs). It is
-calculated before sampling, so unchanged totals or identical displayed
-samples cannot conceal changed impact. Unrelated decks/Notes do not affect it.
-Card scheduling, review logs, deck option settings, shared Note Type design,
-and the placement of preserved outside siblings are not hashed.
-
-Only normal decks are supported. The built-in Default deck **ID 1** is blocked,
-even if renamed or nested. Filtered decks, descendants of unknown/unsupported
-kind, and Cards borrowed from the subtree into filtered decks are blocked.
-`getDeckConfig` must reliably identify each deck as normal (`dyn: false` or
-`0`); errors or missing metadata cannot be bypassed with confirmation flags.
-Return borrowed Cards or resolve the issue with user approval, then review a
-fresh preview. The tool never automatically empties filters, moves Cards,
-renames decks, or repairs data just to enable deletion.
-
-Full review is limited to 100 decks, 5,000 target Cards, 1,000 affected Notes,
-and 10,000 total Cards referenced by those Notes (including outside siblings).
-Exceeding a limit blocks application instead of silently reviewing a subset.
-Native searches use validated numeric deck/Card/Note IDs, not interpolated deck
-names or wildcards. Note reads and explicit-ID checks are batched at 250 IDs.
-Multiple read phases are required; larger reviews take more work than the old
-immediate-delete operation. The active profile, hierarchy, target Card set,
-and referenced Card presence are checked again before an impact is complete.
-
-Anki deletes the normal deck subtree's Cards and their review history. A Note
-with other Cards outside the subtree **survives**, unlike `delete-notes-and-cards`,
-which deletes all Cards of its selected Notes. Shared Note Types and media
-files are not removed. See Anki's [native deck removal implementation](https://github.com/ankitects/anki/blob/main/rslib/src/decks/remove.rs)
-for normal/filtered behavior and Default's special handling.
-
-After applying, native searches verify that all reviewed deck IDs/names and
-target Cards are absent, orphaned Notes are gone, and expected surviving Notes
-and sibling Cards still exist. Only then are `applied` and `verified` true;
-`deletedDecks` contains the full reviewed subtree and `deletedDeck` its root.
-Preview/blocked results have false flags, empty `deletedDecks`, and null
-`deletedDeck`. A write or verification failure returns an MCP error: some data
-may already be deleted. No automatic retry, MCP backup, or rollback is provided.
-Inspect Anki before retrying. Read/compare/delete is not atomic, and concurrent
-changes after the final read can still race. The hash and confirmation flag
-are not authentication or proof of human approval.
-
-### Deck packages (v1)
-
-Both package tools default to `dryRun: true`. They handle local deck packages
-(`.apkg`), not full-collection backup/restore (`.colpkg` or `collection.apkg`).
-
-- `export-deck-package` previews one normal deck and its subdecks by ID from
-  `list-decks`. For example, pass
-  `{"deckId":1234567890123,"fileName":"German.apkg"}`. Scheduling and review
-  history are excluded unless `includeScheduling: true`; Anki includes
-  referenced local media, but not deck presets. Apply with `dryRun: false`,
-  `confirmExport: true`, and the reviewed `expectedImpactHash`. Each export
-  writes into a newly created subdirectory of `ANKI_PACKAGE_EXPORT_DIR`,
-  never over an existing package. The result gives the verified file path,
-  byte size, and SHA-256. Preview reviews the deck scope, not a snapshot of
-  all card contents.
-- `import-deck-package` previews a trusted file inside
-  `ANKI_PACKAGE_IMPORT_DIR`, for example
-  `{"localPath":"/absolute/path/to/imports/German.apkg"}`. The file must be a
-  regular file, at most 512 MiB. Preview checks its ZIP header and SHA-256
-  and identifies the active profile; it does not parse the archive or predict
-  an import diff. Apply with `dryRun: false`, `confirmImport: true`, and the
-  reviewed `expectedImpactHash`. The tool rechecks the fingerprint, then
-  imports a private temporary copy of the reviewed bytes. Anki may update
-  existing notes and merge Note Types. This API imports scheduling and deck
-  presets if present and does not allow disabling those options. Do not use
-  a renamed collection backup or untrusted file.
-
-Both tools wait for AnkiConnect's native operation to finish. Import reports
-completion, not per-note results. No automatic retry, collection backup, or
-rollback is provided. On an unconfirmed outcome, Anki may still be working;
-inspect it before retrying. A private import copy or partial export may be
-retained at the path reported in the error. These tools do not upload or
-share packages.
-
-### Note type tools
-
-- `list-note-types` lists the note types available for note creation.
-- `get-note-type-schema` returns ordered fields, the Browser sort field
-  (`sortField`, null in legacy mode), and the fields used by each card template.
-- `get-note-type-design` returns the complete front/back HTML, shared CSS,
-  ordered fields, and a revision hash.
-- `create-note-type` validates and creates a new Normal or Cloze note type from
-  ordered fields, complete card templates, and shared CSS, with optional
-  Browser sort field selection in v1.
-- `rename-note-type` previews and renames an existing note type by ID without
-  replacing its Notes or Cards. Requires AnkiConnect v1.
-- `set-note-type-sort-field` previews and changes the existing field shown
-  in the Browser's Sort Field column for one note type. Requires AnkiConnect v1.
-- `delete-unused-note-type` previews removal of one explicitly selected note
-  type. It refuses used types and the last type. Requires AnkiConnect v1.
-- `clone-note-type` safely copies ordered field names, card template HTML,
-  shared CSS, and the sort field (v1) without copying notes or cards.
-- `add-note-type-field` adds an empty field to every note of a note type,
-  optionally at a selected zero-based order.
-- `rename-note-type-field` renames one field while preserving existing values
-  and allowing Anki to update template references.
-- `reposition-note-type-field` changes the editor/display order of a field
-  without changing its values.
-- `delete-note-type-field` previews the affected notes, then permanently
-  removes a field and all of its values from every note of the note type.
-- `add-note-type-template` validates and appends a new Card Template, while
-  reporting how many existing Notes may generate another Card.
-- `rename-note-type-template` renames a Card Template without changing its
-  HTML, Cards, or review history.
-- `reposition-note-type-template` changes the zero-based Card Template order.
-- `delete-note-type-template` previews and permanently removes a Card Template
-  and the Cards generated from it.
-- `update-note-type-styling` validates and replaces the CSS shared by all cards
-  generated from a note type.
-- `update-note-type-templates` validates and replaces selected front or back
-  HTML templates in one Anki update.
-- `replace-note-type-text` previews and validates a case-sensitive, literal
-  replacement in the front HTML (`question`), back HTML (`answer`), and/or
-  `css` of explicitly selected Note Types. It does not change Note fields.
-
-With `ANKI_API_MODE=v1`, preview a replacement, for example
-`{"noteTypeIds":[1234567890123],"targets":["css"],"find":"#666","replace":"#555"}`.
-The preview reports occurrences per template side or CSS, design hashes,
-and validation issues. Use up to 20 Note Types and 100 templates per call;
-there is no collection-wide option. An empty replacement removes matches.
-Apply the same proposal with `dryRun: false`, `confirmReplacement: true`, and
-the reviewed `expectedImpactHash`. The server revalidates the designs, invokes
-Anki's native replacement only for affected IDs, and reads back the saved
-HTML/CSS. Shared designs affect all cards of those types. Concurrent edits
-can race with the write; an error may follow a partial change. Inspect Anki
-before retrying; there is no automatic rollback.
-
-AnkiConnect's legacy API calls note types "models", so most name-based
-note-type tools use `modelName` to match existing card payloads.
-
-To rename a note type, use its ID from `list-note-types` with
-`ANKI_API_MODE=v1`. For example, preview
-`{"noteTypeId":1234567890123,"newName":"German Verbs"}`, then apply the same
-proposal with `dryRun: false`, `confirmRename: true`, and the reviewed hash as
-`expectedImpactHash`. The tool rechecks the current name, collection session,
-and name conflicts before writing. It verifies the new name by reading back
-the same ID. It does not rename fields or templates or recreate Notes or
-Cards. Update any saved searches or integrations that refer to the old name.
-The preflight and write are not atomic; if verification fails, inspect Anki
-before retrying.
-
-To change the Browser sort field, preview
-`{"noteTypeId":1234567890123,"sortField":"Uebersetzung"}` in
-`set-note-type-sort-field`. Use an exact field name from
-`get-note-type-schema`. Apply the same proposal with `dryRun: false`,
-`confirmChange: true`, and the reviewed `expectedImpactHash`. The hash
-covers the collection session, note type, ordered field names, and the old
-and new sort fields. The tool reads back the new sort field and field order.
-This applies to every Note of that type. It does not reorder fields or
-change which first field Anki uses for duplicate checks. The existing
-`schemaHash` still hashes only ordered field names.
-
-To remove an unused type, preview `delete-unused-note-type` with its ID from
-`list-note-types`, for example `{"noteTypeId":1234567890123}`. Any Note using
-the type blocks deletion, even if that Note has no Cards. The last remaining
-type is also blocked. Apply with `dryRun: false`, `confirmDeletion: true`,
-and the reviewed `expectedImpactHash`. The hash binds the session and native
-type definition, including its fields, templates, and CSS. AnkiConnect checks
-usage again during deletion. The tool verifies that the selected ID is gone
-and that the other previously listed IDs remain.
-
-This deletes the type's definition and design, not its Notes or Cards. There
-is no MCP backup, retry, or rollback. Anki may require a full sync. The
-preflight and write are not atomic; inspect Anki before retrying if the
-outcome could not be verified.
-
-To create a note type from scratch, call `create-note-type` with ordered
-`fields` and `templates`. Its dry run validates unique names, field references,
-HTML, CSS, and Normal/Cloze compatibility. Repeat the same request with
-`dryRun: false` only after reviewing the result. The operation creates only the
-schema and design; it does not create notes or cards. A Cloze definition must
-have exactly one card template with a `{{cloze:Field}}` filter on its front.
-In v1, optionally set `sortField` to an exact name from `fields`. For
-example, with `"fields":["Verb","Uebersetzung"]`, pass
-`"sortField":"Uebersetzung"` to sort by the translation without changing
-which first field Anki uses for duplicate checks. Omit it to use the first
-field. The tool verifies the saved sort field after creating the type.
-Legacy mode does not accept the option and reports `sortField: null`.
-
-The Card Template lifecycle is split into focused operations. Use
-`get-note-type-design` to read names, order, HTML, and `designHash`; use
-`update-note-type-templates` to change existing HTML; and use the add, rename,
-reposition, or delete tool for structural changes. Every structural mutation
-defaults to `dryRun: true` and requires the current `expectedDesignHash` when
-applied.
-
-Adding a Card Template appends it to the current order and may generate one
-new Card per existing Note whose values satisfy the front template. Its apply
-step requires the reviewed `expectedNoteCount` and
-`confirmCardCreation: true`. Reposition it separately if another order is
-needed.
-
-Deleting a Card Template permanently deletes the Cards generated from it and
-their review history. The dry run reports exact Card and affected Note counts,
-including Notes that would lose their last Card. Applying requires the
-reviewed `expectedCardCount`, `expectedNotesLosingLastCardCount`, and
-`confirmCardDeletion: true`; `confirmNoteDeletion: true` is also required when
-any Note may lose its last Card. The last template of a Note Type cannot be
-deleted.
-
-The update tools default to `dryRun: true`. A safe design-editing workflow is:
-
-1. Call `get-note-type-design`.
-2. Propose a CSS or HTML change with the returned `designHash` as
-   `expectedDesignHash`.
-3. Review the dry-run validation errors, warnings, and before/after hashes.
-4. Repeat the same update with `dryRun: false`.
-
-`update-note-type-styling` reports `applied: true` only after Anki acknowledges
-the write and a fresh design read confirms the exact CSS, the same Note Type
-ID, and unchanged Card Template names/order/front/back HTML. Success returns
-the verified `afterHash`; a dry run still returns a proposed hash without
-writing. An already-matching CSS value skips the write and extra readback.
-Whitespace and Unicode are compared exactly, not reformatted automatically.
-
-A write error, invalid acknowledgement, unreadable design, or unexpected saved
-CSS/templates returns an MCP error rather than a successful change report.
-The message distinguishes an unconfirmed write from an acknowledged write
-whose verification failed. Either can follow an applied change: inspect the
-current design before retrying. No automatic retry, rollback, or backup is
-created. Pre-read, write, and readback are not atomic; this verifies a saved
-HTML/CSS snapshot, not visual rendering or every Note Type property. Tool
-parameters and success response fields are unchanged.
-
-To create a separate design, call `clone-note-type` in dry-run mode. In v1,
-review the result and repeat the same proposal with `dryRun: false` and the
-returned `cloneHash` as `expectedCloneHash`. This hash covers the collection
-session, source design, ordered fields, sort field, and target proposal. The
-tool verifies that the clone kept the source sort field. Legacy mode still
-requires `expectedSourceDesignHash` from `sourceDesignHash` and cannot
-copy a custom sort field.
-
-The clone can be styled independently and used as `modelName` when creating
-notes. The tool detects Cloze templates from `{{cloze:...}}` filters and
-provides an `isCloze` override for unusual templates. It does not copy
-notes, cards, deck placement, field descriptions, or editor font settings.
-
-Field mutations also default to `dryRun: true`. Call `get-note-type-schema`,
-review its ordered fields and `schemaHash`, preview the mutation, and pass that
-hash as `expectedSchemaHash` when applying it. Adding a field gives every
-existing note an empty value and does not automatically place the new field in
-a card template. Moving a field into the first position changes the field Anki
-uses for duplicate checks, so the tools report that as a warning.
-
-Deleting a field has stronger safeguards because it permanently removes data.
-The dry run reports the total note count, the number of notes with a non-empty
-value, and a bounded sample of affected note IDs. Applying the deletion
-requires the same `schemaHash`, the reviewed non-empty note count as
-`expectedNonEmptyNoteCount`, and `confirmDataLoss: true`. The tool refuses to
-delete the last field or a field still referenced by a card template. It does
-not create an MCP backup, so remove template references and review the impact
-before applying the change.
-
-`expectedDesignHash` is required when `dryRun` is false. This prevents an LLM
-from overwriting a design that was changed in Anki after the LLM read it.
-
-Styling and templates belong to a note type, not to one note or card. A
-successful update therefore changes every card generated from that note type.
-The tools return the previous content in their change details, but do not
-create or store backup files. A recent change can be reverted with Anki Undo;
-Anki's collection backups remain the fallback for older changes.
-
-Local validation parses CSS with `css-tree`, checks Anki field references,
-conditional sections, and potentially executable or externally loaded content.
-Anki still performs the authoritative template validation when an update is
-applied.
+Apply with `dryRun: false`, `expectedImpactHash`, and `confirmExport: true`
+or `confirmImport: true`, respectively. Use only trusted deck packages. These
+tools do not handle full-collection backups (`.colpkg` or `collection.apkg`)
+or upload packages. On an unconfirmed result, Anki may still be working; a
+partial export or temporary import copy can remain at the reported path.
+See [Anki's guide to importing packaged decks](https://docs.ankiweb.net/manual/importing/packaged-decks).
 
 ### Note tools
 
-- `search-notes` searches with Anki query syntax and returns a bounded page of
-  field previews, tags, and generated card IDs.
-- `find-empty-notes` uses AnkiConnect v1 to page through Notes with no Cards,
-  empty fields, or empty rendered questions. It never deletes anything.
-- `get-note-details` returns complete ordered fields, per-field SHA-256 hashes,
-  and metadata for selected notes.
-- `validate-note-drafts` checks decks, note types, field names, empty-card
-  rules, existing media references, and duplicates without creating anything.
-- `create-notes` validates and creates a bounded batch, then returns both note
-  IDs and generated card IDs, preserving acknowledged IDs if readback fails.
-  Each draft can safely merge `mediaReferences` for files already in Anki.
-- `update-note-fields` previews partial field patches by default, rejects stale
-  field hashes before writing any note, and verifies saved values after applying.
-- `edit-note-tags` adds and removes selected tags without replacing unrelated
-  tags.
-- `replace-note-tag` previews and replaces one whole tag on explicitly
-  selected Notes, preserving unrelated tags. Requires AnkiConnect v1.
-- `convert-notes-to-note-type` previews and applies native conversion of
-  explicit Notes to another Normal Note Type without duplicating them.
-- `list-tags` returns a filtered, paginated view of collection tags.
-- `delete-unused-tags` previews collection-wide cleanup of tag registrations
-  that no Note uses. It never removes a tag from a Note or deletes Notes or Cards.
-- `delete-notes-and-cards` previews deletion of explicit Note IDs and all their
-  generated Cards. Applying requires a reviewed impact hash and confirmation;
-  native searches verify the result.
+- `search-notes` — searches by native Anki query and returns paginated field
+  previews, tags, and generated card IDs.
+- `find-empty-notes` (**v1**) — finds notes with no cards, empty fields, or
+  empty rendered questions. It never deletes anything.
+- `get-note-details` — reads full fields, per-field SHA-256 hashes, and metadata
+  for selected notes.
+- `validate-note-drafts` — checks note drafts without saving them.
+- `create-notes` — validates and submits up to 50 drafts and reports note
+  and generated card IDs when available.
+- `update-note-fields` — previews or applies guarded changes to selected fields.
+- `convert-notes-to-note-type` (**v1**) — previews mapping fields and cards
+  to another Normal note type without duplicating the notes.
+- `edit-note-tags` — adds and removes selected tags, preserving unrelated tags.
+- `replace-note-tag` (**v1**) — replaces a whole tag on up to 100 explicit note
+  IDs. Matching is case-insensitive, and replacing `inbox` does not replace
+  `inbox::later`. Apply with `confirmReplacement: true` and `expectedImpactHash`.
+- `list-tags` — lists collection tags with filtering and pagination.
+- `delete-unused-tags` (**v1**) — previews collection-wide removal of
+  unreferenced tag registrations. It does not remove tags from notes.
+- `delete-notes-and-cards` — previews deletion of up to 100 explicit notes
+  and all of their cards, including cards in other decks.
 
-With `ANKI_API_MODE=v1`, call `delete-unused-tags` with `{}` for the candidate
-list, then apply with `dryRun: false`, `confirmDeletion: true`, and the
-reviewed `expectedImpactHash`. The tool scans tagged Notes, including those
-without cards, and refuses scans above 50,000 tagged Notes or 1,000 registered
-tags. Anki rechecks usage and deletes unused registrations across the active
-collection; an unused parent registration can disappear without removing any
-used child tag. Concurrent changes can race with the native operation.
+#### Search and inspect
 
-With `ANKI_API_MODE=v1`, ordinary `search-notes` calls use native cursor
-paging by default:
+Use native [Anki search syntax](https://docs.ankiweb.net/manual/searching).
+For example, send this to `search-notes`:
 
 ```json
 {"query":"deck:German tag:A1","limit":20}
 ```
 
-Continue sequentially with the same query and limit and set `cursor` to the
-previous result's `nextCursor`. A null `nextCursor` ends the search.
-In this mode, `total` and `offset` are null: AnkiConnect sends only the
-requested page of IDs and does not return an exact total. The page's detail
-read uses the same Anki collection session. Start a new search if a cursor
-expires, the profile changes, or a continuation fails after consuming its
-cursor. Use `pagination: "offset"` for an exact total, or supply an explicit
-`offset` (including 0) to select offset mode when pagination is omitted.
-V1 offset mode walks the native search pages to count the matches; this can
-be slower than a single cursor page and does not call legacy. Legacy mode
-defaults to offset and does not support native cursors.
+`search-notes` and `search-cards` default to cursor pagination in v1.
+Pass `nextCursor` back as `cursor` with the same query and limit; `null`
+ends the search. `total` and `offset` are `null` for cursor pages. Restart
+if the cursor expires, was already consumed, or the profile changes.
+Request `pagination: "offset"` or an explicit `offset` for an exact total
+and numeric pages, which may require scanning the complete match set.
+Legacy mode supports only offset pagination.
 
-#### Replacing a tag on selected Notes (v1)
+For `find-empty-notes`, choose `noCards`, `allFieldsEmpty` (using Anki's
+HTML-aware normalization), or `allQuestionsEmpty` (all possible questions
+render empty). `{"criterion":"noCards","query":"tag:inbox","limit":20}`
+is a read-only example. The tool uses cursors without an exact total.
+A cardless note may still contain useful data. Inspect it before considering
+deletion.
 
-Pass up to 100 explicit Note IDs (for example, from `search-notes`):
+#### Create notes
 
-```json
-{"noteIds":[1234567890123],"from":"inbox","to":"reviewed"}
-```
-
-The default dry run shows affected Notes, Notes already carrying the target
-tag among those affected, and Notes skipped because the source is absent.
-Matching is case-insensitive for the full tag name; replacing `inbox` does
-not replace `inbox::later`. The tool does not accept a collection-wide
-selector or a case-only rename. Anki can preserve registered tag casing.
-
-Apply with `dryRun: false`, `confirmReplacement: true`, and the reviewed
-`expectedImpactHash`. Any missing Note or change to the selected Notes'
-tags invalidates the preview. The tool sends only the affected IDs to Anki,
-then checks the replacement and the unrelated tags on those Notes. Preview
-and write are not atomic. There is no automatic retry or rollback; inspect
-Anki before retrying if the result could not be verified.
-
-#### Finding empty Notes (v1)
-
-Use `find-empty-notes` with `ANKI_API_MODE=v1` and one native criterion:
-
-- `noCards`: the Note has no Cards but may still contain useful field values.
-- `allFieldsEmpty`: all Note fields are empty according to Anki's
-  HTML-aware normalization.
-- `allQuestionsEmpty`: all possible Card questions for the Note render empty,
-  not just one of its questions. The Note may still contain field values.
-
-```json
-{"criterion":"noCards","query":"tag:inbox","limit":20}
-```
-
-The optional Anki `query` narrows the initial scan; `limit` only bounds the
-number of candidates per page (default 20, maximum 100). Continue with
-`cursor` set to `nextCursor` and the same criterion, query, and limit.
-A null cursor ends the scan. There is no exact total, and a rejected or
-consumed cursor requires restarting the scan. The candidate IDs are a
-snapshot; a Note may change or disappear before its details are loaded.
-
-Review the candidates before taking any action. If you decide to delete
-specific Notes, recheck them first and use the separate
-`delete-notes-and-cards` dry run to review the deletion impact.
-
-#### Converting Notes to another Note Type (v1)
-
-Select up to 50 explicit Note IDs from one Normal Note Type and an existing
-destination ID from `list-note-types`:
-
-```json
-{"noteIds":[1234567890123],"targetNoteTypeId":1234567890999}
-```
-
-The default dry run reports Anki's proposed mappings, counts nonempty values
-in unmapped fields, samples Card IDs that would stay or be removed, and
-gives an upper bound on newly generated Cards. Anki can map different names
-by ordinal; review the maps even if the names look similar. Override either
-map with a complete list such as `{"target":"Question","source":"Front"}`
-for each destination, using `source: null` for an empty field or a template
-slot with no old Card mapped to it. Source names cannot be reused.
-
-Apply the exact reviewed selection and mapping with `dryRun: false`,
-`expectedImpactHash`, and `confirmConversion: true`. Also set
-`confirmDataLoss: true` if nonempty values or Cards would be discarded,
-and `confirmCardCreation: true` if new Cards could be generated. The hash
-binds both schemas, the active session, full field values, tags, Card IDs
-and scheduling state. The tool refreshes Anki's native plan token on apply.
-
-This first version deliberately blocks Cloze conversions, Cards in filtered
-decks, an empty mapped first field, and any Note that would retain no
-existing Card. Use batches within the 500-Card review limit. Verification
-checks unchanged Note IDs and tags, exact mapped HTML, removed/new Card
-IDs, and the mapped Cards' template, deck placement and reported scheduling
-fields. It does not verify each review log entry or predict rendered
-content. Removed Cards can lose access to their study history, and a
-conversion can require a full Anki sync. The preflight and write are not
-atomic; there is no automatic backup, retry or rollback.
-
-#### Note creation outcomes
-
-`create-notes` keeps the existing input format and validates the entire batch
-before sending one creation request. A failed draft prevents every Note in
-that batch from being sent. In v1 mode, `notes.validateMany` and
-`notes.createMany` use the same fields, tags, and duplicate policy, with
-preflight, media reads, creation, and verification pinned to one collection
-session. Creation uses `atomic: false` to retain independent item outcomes.
-Legacy mode still uses `addNotes`. Validation is not a reservation or an
-idempotency guarantee; concurrent edits can change what Anki accepts.
-
-Each input has a zero-based `inputIndex` in `noteResults`:
-
-| Status | Meaning |
-| --- | --- |
-| `created` | An aligned creation reply acknowledged an ID, and readback confirmed that ID, its Note Type, and readable distinct Card IDs. |
-| `created-unverified` | Creation acknowledged an ID, but readback was missing, malformed, failed, or inconsistent. The ID is retained; `cardIds` is `null`. |
-| `not-created` | A valid reply returned legacy `null` or a v1 lookup/validation rejection for this input. |
-| `not-attempted` | No creation request was sent, or v1 rejected the stale session before executing it. |
-| `unknown` | No trustworthy acknowledgement for this input; its Note may already exist. A v1 internal failure is not proof of rejection. |
-
-`outcome` summarizes the batch as `complete`, `incomplete`, `unknown`, or
-`not-attempted`. `createdNoteCount` is the exact acknowledged count when all
-outcomes are known, **not the number successfully read back**. It is `null`
-if any outcome is unknown, even when other IDs were acknowledged and verified;
-`0` is used only for known zero creation. A Note may
-disappear after its creation was acknowledged without changing that historical
-count. Existing success fields `createdNotes` and `validations` remain, and
-each `createdNotes` entry additionally includes `verified`. Normal success
-still supplies numeric counts and Card ID arrays; error results can have a
-null count and/or null Card arrays. `[]` means a readback actually reported no
-Cards; it is never substituted for unavailable data.
-
-Incomplete/unknown execution returns `isError: true` **with structured data**,
-not an exception that discards acknowledged IDs. Results are also serialized
-in a text content block so clients that ignore `structuredContent` still
-receive the evidence, following the [MCP structured-content guidance](https://modelcontextprotocol.io/specification/2025-11-25/server/tools#structured-content).
-
-Malformed, misaligned, or duplicate-ID creation replies cannot be safely
-associated with drafts. Their distinct positive integer IDs are retained only
-as `reportedNoteIds` (up to 50; `reportedNoteIdsTruncated` identifies overflow).
-These are **unmapped reports, not proof of creation or ownership**. They are
-not read back, assigned to input positions, or used for automatic cleanup.
-`validations` remains validation/rejection metadata; use `noteResults` for
-execution status. It may be empty if draft preparation itself failed.
-
-No creation retry, speculative search, or rollback is performed. Do not resend
-the whole batch after an incomplete/unknown result. Inspect acknowledged IDs
-with `get-note-details` where available, then review what actually exists
-before deciding whether to retry any inputs. A readback verifies ID/Note Type
-and Card ID data, not exact field/tag content, scheduling, or visual rendering.
-Reads, creation, and verification are not atomic and do not exclude concurrent
-edits. V1 session checks prevent later steps from operating in a different
-profile, but cannot undo a write acknowledged before a profile switch.
-
-#### Safe field updates
-
-`update-note-fields` defaults to `dryRun: true`. Existing callers that apply
-updates must now explicitly set `dryRun: false` and provide
-`expectedFieldHashes` for every submitted field.
-
-A dry run validates the complete batch and returns `changes` with canonical
-field names, `beforeFieldHash`, `afterFieldHash`, and raw HTML previews of the
-current and proposed values. Each preview is limited to 1,000 UTF-16 code
-units; `previewTruncated` identifies shortened previews. Hashes always cover
-the complete value, including HTML and whitespace.
-
-For example, preview a field replacement:
+Pass the same draft shape to `validate-note-drafts` and `create-notes`.
+Use an existing deck and exact note type and field names:
 
 ```json
 {
-  "dryRun": true,
-  "updates": [
+  "notes": [
     {
-      "noteId": 1234567890123,
+      "deckName": "Languages::German",
+      "modelName": "Basic",
       "fields": {
-        "Front": "<b>das Haus</b><br>Translation: house"
-      }
+        "Front": "das Haus",
+        "Back": "the house"
+      },
+      "tags": ["german", "a1"]
     }
   ]
 }
 ```
 
-To apply the same patch, set `dryRun: false` and add
-`"expectedFieldHashes": { "Front": "<beforeFieldHash from the preview>" }`
-inside the update object. Replace the placeholder with the actual 64-character
-hash. A separate preview is optional: `get-note-details` already returns the
-hash as `notes[i].fields.Front.hash`, which can be passed directly when applying.
-When using a preview to check an earlier read, include those earlier hashes in
-the dry run too; a hash-free preview only describes the current data.
+Use `get-note-type-schema` to find the field names. To add media already in
+Anki, use the draft's `mediaReferences` with the exact `filename` and
+`fieldName` rather than embedding unverified references. A failed validation
+blocks the batch before creation; an accepted batch can still have mixed
+outcomes. `create-notes` is a write and does not have a `dryRun` option.
 
-Field names and hash keys resolve case-insensitively to the note type's exact
-names. Only submitted fields are checked for conflicts, so editing another
-field does not block the patch. Missing notes, invalid field names, or any
-stale expected hash reject the whole batch before the first write. No-op
-patches skip writes and additional readback. Successful apply results report
-`applied: true` and `verified: true` after changed fields have been read back
-and matched exactly; for no-op patches, values were already matched during
-validation. Dry runs report both flags as `false`.
+Check `noteResults` by `inputIndex`. `created` has a verified note ID and
+card IDs; `created-unverified` retains the acknowledged note ID even if
+readback failed. `not-created` and `not-attempted` indicate a known
+rejection or lack of execution. `unknown` means a note may already exist.
+If any outcome is unknown, `createdNoteCount` is `null`, not zero.
+`reportedNoteIds` from a malformed reply are not mapped to inputs and
+are not proof of creation. Inspect acknowledged IDs and do not blindly
+resend the whole batch after a partial or unknown result.
 
-Each submitted field replaces its complete value. Preserve any existing HTML
-or media markup that should remain; unspecified fields are untouched. A hash
-check detects changes since the read or preview, but cannot judge whether the
-proposed replacement preserves the intended content.
+#### Update fields, convert, or delete
 
-With `ANKI_API_MODE=v1`, this tool passes the same collection session to
-`notes.getMany`, each `notes.update`, and the verification read. If the
-profile changes during a tool call, a stale-session error stops the
-remaining steps without falling back to a legacy write. A preview and a
-later apply are separate calls: the apply still checks the field hashes
-against current values. Media attachment and detachment also use v1 when
-enabled, with their own preflight and readback checks.
-
-The preflight check and subsequent writes are separate AnkiConnect calls, not
-an atomic transaction. A concurrent edit in that interval remains possible.
-On a write or verification error, the tool reports an MCP error with the
-affected or acknowledged note IDs. Earlier writes may already be saved; no
-automatic rollback or retry is performed. Inspect current values before
-preparing another patch.
-
-Global tag replacement, unused-tag cleanup, and changing an existing note to
-another note type are intentionally deferred because they require additional
-safety and data-preservation rules.
-
-#### Safe Note deletion
-
-`delete-notes-and-cards` now defaults to `dryRun: true`. Old calls that only
-provide `noteIds` **no longer delete anything**. The tool accepts 1–100 explicit
-IDs (duplicates are ignored), not search queries.
-
-First request a preview:
+Preview a patch with `update-note-fields`:
 
 ```json
 {
-  "noteIds": [1234567890000, 1234567890001]
+  "updates": [
+    {
+      "noteId": 1234567890123,
+      "fields": {"Front":"<b>das Haus</b><br>Translation: house"}
+    }
+  ]
 }
 ```
 
-Review `profileName`, `impact`, `missingNoteIds`, `blockers`, and `warnings`.
-`impact` reports exact Note/Card counts and one entry per loaded Note. Each
-entry shows the first 3 ordered fields (raw HTML, up to 200 UTF-16 code units
-per value) and up to 20 generated Card IDs. `fieldPreviewsTruncated` and
-`cardIdsTruncated` identify shortened samples. Use `get-note-details` when
-more content is needed to decide whether deletion is appropriate.
+Each submitted field replaces its **complete value**, including HTML.
+Preserve any markup you want to keep; unspecified fields are not changed.
+To apply, set `dryRun: false` and add `expectedFieldHashes` to each update,
+keyed by the submitted field name. Use `beforeFieldHash` from the preview
+or the corresponding `hash` from `get-note-details`. A missing or stale
+hash blocks the whole patch before the first write. Preview snippets may
+be truncated; hashes cover the full field.
 
-After the user approves the data loss, submit the **same Note IDs** with:
+For `convert-notes-to-note-type`, select up to 50 note IDs from one Normal
+note type and a `targetNoteTypeId`. Review Anki's field and template
+mappings, dropped nonempty values, and retained, removed, or possible new
+cards. Apply with `dryRun: false`, `expectedImpactHash`, and
+`confirmConversion: true`. Also set `confirmDataLoss: true` or
+`confirmCardCreation: true` when indicated. The tool blocks Cloze
+conversions, filtered cards, empty mapped first fields, notes that would
+retain no existing card, and scopes above 500 cards. A conversion can
+require a full sync.
+
+For `delete-notes-and-cards`, preview `{"noteIds":[1234567890123]}` and
+apply the same IDs with `dryRun: false`, `expectedImpactHash`, and
+`confirmDeletion: true`. Missing notes or a changed snapshot block the
+whole batch. Deletion removes the notes, **all** their cards and those
+cards' history, but not media files.
+
+For `delete-unused-tags`, preview with `{}` and apply with the same hash
+and deletion confirmation. Cleanup can remove an unused parent registration
+while keeping tags on notes such as `parent::child`. It includes notes
+without cards and refuses scans beyond 50,000 tagged notes or 1,000
+registered tags.
+
+### Card tools
+
+- `search-cards` — searches cards with Anki queries such as
+  `deck:German is:due`. Uses the same pagination options as note search.
+- `get-card-details` — reads fields and normalized scheduling for selected
+  cards. Set `includeRenderedContent: true` for rendered front and back HTML.
+- `get-card-preview` — returns Anki-rendered HTML, shared CSS, and restricted
+  standalone documents for an existing card.
+- `get-card-review-history` — returns bounded, newest-first review history.
+- `predict-card-intervals` (**v1**) — shows Anki's predicted Again, Hard, Good,
+  and Easy intervals without submitting an answer.
+- `get-card-due-status` (**v1**) — checks a card's due time and per-card
+  availability; `includeLearnAhead: true` also considers learn-ahead.
+- `set-card-suspension` — suspends or unsuspends selected cards.
+- `set-card-flag` — sets or clears a supported flag.
+- `reschedule-cards` — applies Anki's Set Due Date syntax.
+- `reset-cards-to-new` — resets scheduling without promising to erase history.
+- `start-card-relearning` — starts relearning for active Review cards.
+  In v1 it submits an **Again** answer and can change the review history,
+  repetition/lapse counts, or leech state.
+
+Use a **card ID**, not a note ID, for card operations. The five scheduling,
+suspension, and flag mutation tools above apply immediately after preflight,
+not in dry-run mode. They check the reviewed IDs and read back the relevant
+state; an error may still follow a partial write. Interval predictions are
+not exact due dates. The due-status tool does not account for daily deck
+limits or promise that a card is next. A new card can be available without
+being due. A general-purpose reviewer or arbitrary scheduling-field editor
+is not exposed.
+
+#### Inspect a card's HTML and CSS
+
+Find a representative card and pass this to `get-card-preview`:
+
+```json
+{"cardId":1234567890123,"side":"both","theme":"light"}
+```
+
+Use `front`, `back`, or `both` for `side`, and `light` or `dark` for
+`theme`. Anki renders the existing card; this is not a renderer for unsaved
+template drafts. The tool returns untrusted raw `html` and a restricted
+`document` for each selected side, plus CSS. The combined UTF-8 size of CSS
+and selected raw HTML is limited to 256 KiB.
+
+Open `document` separately in a viewer that honors its Content Security
+Policy, or use a sandboxed iframe without scripts, same-origin access, or
+navigation permissions. Never insert the raw HTML or CSS into a privileged
+application page. The restricted copy removes scripts, event handlers, and
+media source URLs; retained CSS relies on the document's CSP to block
+external loads. The tool does not fetch media or run a browser; it produces
+no screenshot, and media, custom fonts, or interactive layouts may be absent.
+
+### Note type tools
+
+A note type defines ordered fields, card templates, and shared CSS. A
+template determines how a note becomes a card. Editing a type affects
+**every card of that type**, not just a selected note. In name-based inputs
+such as `create-notes`, `modelName` means the note type name.
+
+- `list-note-types` — lists existing note types.
+- `get-note-type-schema` — reads ordered fields, template field usage, and
+  the Browser sort field (`null` in legacy mode).
+- `get-note-type-design` — reads template names/order, front and back HTML,
+  shared CSS, and the design hash.
+- `create-note-type` — previews and creates a Normal or Cloze definition.
+  Cloze requires one template with a `{{cloze:Field}}` front reference.
+- `clone-note-type` — copies a design and ordered fields, not notes or cards.
+  V1 also preserves the Browser sort field.
+- `rename-note-type` (**v1**) — renames one type by ID. Apply with
+  `confirmRename: true` and `expectedImpactHash`.
+- `set-note-type-sort-field` (**v1**) — changes the Browser sort field, not
+  the field order or duplicate-check field. Apply with `confirmChange: true`
+  and `expectedImpactHash`.
+- `delete-unused-note-type` (**v1**) — deletes an unused type, never the
+  last remaining type or one used even by a cardless note. Apply with
+  `confirmDeletion: true` and `expectedImpactHash`.
+- `add-note-type-field` — inserts a field, initially empty on existing notes.
+- `rename-note-type-field` — renames a field while retaining its values.
+- `reposition-note-type-field` — changes the zero-based field order.
+- `delete-note-type-field` — previews permanent removal of a field and its values.
+- `add-note-type-template` — appends a template that can generate new cards.
+- `rename-note-type-template` — renames a template without changing its
+  HTML or recreating cards.
+- `reposition-note-type-template` — changes the zero-based template order.
+- `delete-note-type-template` — previews deletion of a template and its cards.
+- `update-note-type-styling` — replaces the shared CSS.
+- `update-note-type-templates` — replaces selected complete front/back sides.
+- `replace-note-type-text` (**v1**) — previews literal, case-sensitive
+  replacement in front HTML (`question`), back HTML (`answer`), or `css`
+  for explicit type IDs. Does not edit note-field values.
+
+#### Design and schema changes
+
+Start with `get-note-type-design` or `get-note-type-schema`. Preview the
+change, review validation and impact, and apply the same proposal with
+`dryRun: false`:
+
+| Workflow | Required guards on apply |
+| --- | --- |
+| Styling and template changes | `expectedDesignHash`. |
+| Add a template | `expectedDesignHash`, `expectedNoteCount`, `confirmCardCreation: true`. |
+| Delete a template | `expectedDesignHash`, `expectedCardCount`, `expectedNotesLosingLastCardCount`, `confirmCardDeletion: true`, plus `confirmNoteDeletion: true` if notes can lose their last card. The last template cannot be deleted. |
+| Add, rename, or move a field | `expectedSchemaHash`. |
+| Delete a field | `expectedSchemaHash`, `expectedNonEmptyNoteCount`, and `confirmDataLoss: true`. A field still referenced by a template, or the last field, cannot be deleted. |
+| Clone a type | In v1, `expectedCloneHash` from `cloneHash`. In legacy mode, `expectedSourceDesignHash` from `sourceDesignHash`. |
+| Replace literal text | `expectedImpactHash` and `confirmReplacement: true`. Up to 20 selected note types and 100 templates. |
+
+`create-note-type` accepts ordered `fields`, `templates`, and shared `css`
+and defaults to preview. In v1 it also accepts a `sortField` from those
+fields. Field order still determines which first field Anki uses for
+duplicate checks. A cloned type can be styled independently; the clone
+does not copy field descriptions or editor font settings.
+
+For example, preview a shared CSS color change with `replace-note-type-text`:
 
 ```json
 {
-  "noteIds": [1234567890000, 1234567890001],
-  "dryRun": false,
-  "expectedImpactHash": "<impactHash from the reviewed preview>",
-  "confirmDeletion": true
+  "noteTypeIds": [1234567890123],
+  "targets": ["css"],
+  "find": "#666",
+  "replace": "#555"
 }
 ```
 
-Replace the placeholder with the actual 64-character lowercase hash. The
-server rereads the selected Notes and compares their impact hash before
-sending any deletion. The hash covers the active profile name, requested IDs,
-Note IDs and Note Type names, modification timestamps, all tags, complete
-field values including HTML/whitespace, field names/orders, and all generated
-Card IDs. It covers data beyond the displayed samples. Reordering request
-IDs, tag lists, field-object entries, or Card ID lists does not change it.
-It is not a stored backup, authorization token, or guarantee of user approval.
-
-Any changed selection or snapshot blocks the **whole batch**. Missing or
-unloadable Notes are reported in `missingNoteIds`, make `impactHash: null`,
-and block deletion of the other Notes too. Inspect a fresh preview rather than
-automatically resubmitting a rejected operation with its new hash.
-
-Successful application returns `applied: true`, `verified: true`, and
-`deletedNotes` with the full reviewed Card IDs. Preview or blocked results
-return both flags as `false` and an empty `deletedNotes`. A preview needs one
-HTTP `multi` request (profile plus Note data); applying normally needs three
-HTTP requests: current scope, deletion, and batched verification. Verification
-uses explicit-ID native Note/Card searches, with Card queries split into
-groups of 250 IDs, and checks the active profile again. Invalid `notesInfo`
-objects are never used as proof of successful deletion.
-
-Deleting a Note deletes **all** of its generated Cards, including Cards in
-other decks, and their review history. Media files are not deleted. The hash
-does not include Card scheduling, deck placement, review history, or shared
-Note Type HTML/CSS. Changes to these alone do not invalidate it. Unselected
-Notes are not part of the hash.
-
-Read/compare/delete is not an atomic transaction: a concurrent edit after the
-last read can still race. No MCP backup, automatic retry, or rollback is
-performed. A write error can mean that deletion already reached Anki; a
-verification error can occur after Anki acknowledged deletion. Both return
-an MCP error describing the uncertain/acknowledged state. Inspect Anki before
-retrying; never interpret an error as proof that nothing was deleted.
+Preview reports matches per template side or CSS and validation issues.
+The server checks field references and CSS syntax locally; Anki is the
+final authority when writing. Read back the saved design and use
+`get-card-preview` on real cards after applying. These tools do not store
+backups. Removing fields or cards can lose data and review history.
 
 ### Media tools
 
-- `search-media-files` returns a sorted, bounded page of filenames matched by
-  an AnkiConnect glob pattern.
-- `get-media-file` returns verified size, MIME type, kind, and SHA-256 metadata.
-  Small images and audio can also be returned as native MCP content when the
-  client requests it.
-- `store-media-file` imports bounded image, audio, video, or font bytes from
-  base64, a public HTTPS URL, or an explicitly allowed local directory.
-  Existing files are never overwritten: the default lets Anki create a unique
-  filename, while `collisionPolicy: "reject"` refuses a collision.
-- `find-media-references` scans note fields, Card Template HTML, and note-type
-  CSS for exact references to one filename, returning a reference fingerprint
-  when the scan is complete.
-- `attach-media-to-notes` appends or prepends safe `<img>` or `[sound:...]`
-  markup without replacing unrelated field HTML.
-- `detach-media-from-notes` removes exact references from selected note fields
-  without deleting the underlying file.
-- `delete-media-file` performs a complete impact scan and requires the reviewed
-  file hash, reference count, reference fingerprint, and explicit confirmation
-  before moving a file to Anki's media trash.
+- `search-media-files` — searches filenames by a glob such as `gehen*.mp3`
+  and returns a sorted page without reading file contents.
+- `get-media-file` — reads one exact filename and returns size, MIME type,
+  kind, and SHA-256. `includeContent: true` also returns a supported image
+  or audio file up to 5 MiB as native MCP content.
+- `store-media-file` — imports an image, audio file, video, or font up to
+  25 MiB from base64, public HTTPS, or an allowed local path. It does not
+  overwrite files: choose `collisionPolicy: "reject"` to refuse a collision
+  instead of allowing Anki to choose a unique name.
+- `find-media-references` — finds exact references in note fields, template
+  HTML, and shared CSS. It returns a fingerprint only for a complete scan.
+- `attach-media-to-notes` — adds a reference to existing media to a field
+  without replacing unrelated HTML.
+- `detach-media-from-notes` — removes matching references from fields
+  without deleting the media file.
+- `delete-media-file` — previews references and moves the file to Anki's
+  media trash only after confirmation.
 
-In v1 mode, the server submits `media.store` once and polls its operation
-status before verifying the stored bytes. The polling phase is bounded by
-the configured request timeout. A lost status or timeout does not cancel
-the accepted write; inspect Anki before retrying. Collision rejection uses
-Anki's native error policy as well as the preflight check.
+Store or locate media first and use the exact returned filename. For a
+new note, use `mediaReferences`. For an existing note, preview
+`attach-media-to-notes`, for example:
 
-Media mutations that change note fields default to `dryRun: true`. The dry run
-returns a SHA-256 hash of the complete current field value; pass it back as
-`expectedFieldHash` when applying the same attachment or detachment. This
-prevents an update from overwriting a field edited after the preview.
-
-For deletion, first call `delete-media-file` with `dryRun: true` (the default).
-Review its file metadata, reference locations, blockers, and warnings. To apply,
-pass `dryRun: false`, `confirmDeletion: true`, and the preview's values:
-
-- `file.sha256` as `expectedSha256`;
-- `usage.totalReferenceCount` as `expectedReferenceCount`;
-- `usage.referenceFingerprint` as `expectedReferenceFingerprint`.
-
-If references remain, `confirmBrokenReferences: true` is also required. Applying
-without the reference fingerprint is no longer accepted. The fingerprint
-includes the filename and every detected reference's Note/field, template/side,
-or CSS owner and occurrence count. Moving a reference can therefore block
-deletion even when the total count stays unchanged. Scan order and unrelated
-surrounding HTML do not affect it.
-
-The fingerprint covers all detected locations **before** the response samples
-are truncated. `referencesTruncated: true` limits the displayed detail, not hash
-coverage. An incomplete scan (including missing `notesInfo` results or CSS scan
-failures) returns `referenceFingerprint: null` and blocks deletion. Fingerprinting
-adds local hashing, not extra AnkiConnect requests, and stores no backup or history.
-These checks are not an atomic Anki transaction: a concurrent edit between the
-final scan and deletion is still possible. Dynamically generated references
-outside the scanner's detectable HTML/CSS syntax are not covered.
-
-CSS scan failures are reported separately in `usage.cssScanFailureCount` and
-`usage.cssScanFailures`. The latter contains the first diagnostic (with source
-line/column) per affected Note Type, sampled to 100 Note Types. Compare its
-length with `cssScanFailureCount` to detect truncated diagnostics. Known
-references are still returned, but counts may omit references when
-`scanComplete: false`; zero detected references is not proof of no usage.
-
-The scanner checks recovered parser errors, opaque/unparsed content, and
-unmatched or unterminated blocks, functions, strings, URLs, and comments. It
-also parses custom-property values so `--background: url("image.png")` is
-inspected. Even browser-tolerated EOF recovery or syntax unsupported by the
-parser makes a scan incomplete. One failing Note Type blocks media deletion,
-even when the target filename was not found in its CSS. Neither
-`confirmDeletion` nor `confirmBrokenReferences` bypasses this check.
-Speculative parser retries that successfully produce fully parsed syntax
-(such as nested `@supports` conditions) do not count as failures.
-
-Inspect the reported CSS issue with the user before changing any Note Type;
-do not automatically rewrite unrelated styling just to unblock deletion.
-After resolving the issue or adding parser support, obtain a fresh complete
-preview. CSS is not rewritten by scanning, and these checks add no AnkiConnect
-requests. The parser's tolerant recovery behavior is described in the
-[css-tree parsing documentation](https://github.com/csstree/csstree/blob/master/docs/parsing.md#onparseerror).
-CSS matching is limited to direct `url(...)` occurrences in shared Note Type
-styles; it does not follow imported stylesheets or evaluate browser runtime
-behavior. A complete scan is not a guarantee that every possible reference
-syntax is supported.
-
-The recommended note workflow is:
-
-1. Store or locate the media file.
-2. Use the exact returned filename.
-3. Attach it to existing notes, or pass it through `mediaReferences` when
-   validating and creating new notes.
-4. Use `find-media-references` before replacing or deleting an asset.
-
-Anki stores media in one flat `collection.media` folder. Static assets
-referenced directly by Card Template HTML or note-type CSS must start with an
-underscore, such as `_logo.png` or `_inter.woff2`, so Anki's media checker does
-not treat them as unused. `store-media-file` enforces this rule when
-`usage: "template-static"` is selected.
-
-URL imports accept public HTTPS destinations only, reject credentials,
-localhost and private IP addresses, follow a bounded number of redirects, and
-enforce a 25 MiB download limit. Local paths are resolved through
-`ANKI_MEDIA_IMPORT_DIRS` to prevent unrestricted filesystem access.
-
-Automatic Anki collection backups do not include media files. Media deletion
-therefore remains a destructive action even though Anki initially moves the
-file into its media trash. The delete tool refuses to apply when the candidate
-set is too large to complete its bounded reference scan or some candidates
-cannot be loaded, or if shared Note Type CSS cannot be fully inspected.
-
-## Adding an MCP tool
-
-1. Add the implementation to the appropriate module in `mcp/tools/`.
-2. Add typed AnkiConnect operations to the appropriate `anki-api/` domain
-   client and call them through `invokeAnki`.
-3. Define its input and output schemas with Zod.
-4. Return readable `content` and machine-readable `structuredContent`.
-5. Register the tool in its domain module or in `mcp/server.ts`.
-6. Run the type check and build:
-
-```bash
-npm test
-npm run typecheck
-npm run build
+```json
+{
+  "attachments": [
+    {"noteId":1234567890123,"fieldName":"Audio","filename":"gehen.mp3"}
+  ]
+}
 ```
 
-Keep tool names and descriptions clear because MCP clients expose them directly
-to language models.
+To apply an attachment or detachment, set `dryRun: false` and pass the
+preview's `beforeFieldHash` as `expectedFieldHash` for each field.
+For assets referenced directly in templates or shared CSS, use a leading
+underscore, such as `_logo.png` or `_inter.woff2`, and
+`usage: "template-static"` when storing them. This keeps Anki's media
+checker from treating those assets as unused.
+See [Anki's media guide](https://docs.ankiweb.net/manual/media).
 
-## TypeScript
+URL imports reject credentials, private addresses, and non-HTTPS sources.
+Local imports resolve the source against the configured allowlist. Use
+HTTPS or an allowed local source when a client cannot send a large base64
+request. V1 storage waits for native completion and verifies stored bytes;
+a lost response does not prove that the file was not saved.
 
-All application source files use TypeScript and are checked with strict
-compiler settings. JavaScript source files are not included in the build.
+To apply a media deletion, use `dryRun: false`, `confirmDeletion: true`,
+`expectedSha256` from `file.sha256`, `expectedReferenceCount` from
+`usage.totalReferenceCount`, and `expectedReferenceFingerprint` from
+`usage.referenceFingerprint`. If references remain, also set
+`confirmBrokenReferences: true` after reviewing what can break.
 
-When using the `NodeNext` module system, keep `.js` extensions in relative
-imports inside TypeScript source files:
+The fingerprint covers detected locations and occurrence counts before
+sampling. Incomplete scans, including missing notes or unparseable shared
+CSS, block deletion even with confirmation. Check `scanComplete` and
+`cssScanFailures`; zero detected references on an incomplete scan is not
+proof that a file is unused. The scanner does not evaluate runtime-generated
+references or follow imported stylesheets. Deleting media is destructive
+even when Anki initially moves the file to its media trash.
 
-```ts
-import { callAnki } from "../../anki-api/anki-request.js";
-```
+### Collection tools (v1)
 
-TypeScript resolves this import to the corresponding `.ts` source file and
-preserves the `.js` extension required by Node.js in the compiled output.
+- `get-collection-info` — reads the active profile, scheduler (`sm2` or
+  `fsrs`), and opaque session.
+- `refresh-collection` — refreshes windows. `target: "cachesAndWindows"`
+  also invalidates the supported note type cache. It does not sync, reopen,
+  or repair the database.
+- `sync-collection` — syncs with the server configured in Anki.
+  `includeMedia` defaults to `true` but respects the profile's media sync
+  setting. Choose the direction for a full sync yourself in Anki.
+- `check-collection-integrity` — runs native **Tools → Check Database**.
+  It can repair data and clear Undo history; it does not make a backup.
+- `undo-collection-action` — undoes the current undoable action, which
+  might be a manual edit. There is no preview of the actual entry and no
+  way to select it by ID. Do not use Undo as automatic rollback.
+- `get-collection-operation` — reads the status and eventual result of a
+  submitted sync, integrity check, or Undo.
+- `cancel-collection-operation` — requests cancellation by `operationId`
+  for an operation started by this running MCP server.
+
+Sync, integrity checks, and Undo first return a preview of the request and
+profile. Apply the same options with `dryRun: false`, `confirm: true`, and
+the one-use `confirmationToken` from the preview. It expires after
+120 seconds. The preview does not contact the sync server, check the
+database, or reveal the Undo entry. Do not edit or study between preview
+and confirmation of Undo.
+
+Submission returns an `operationId`, **not** a completed result. Check
+it with `get-collection-operation` on the same running server. If the
+state is `waitingForUser`, respond in Anki and check that same ID again.
+A full sync may change the collection session, but the receipt still tracks
+the original operation. If the acknowledgement is lost, inspect Anki
+before restarting MCP; do not launch a second operation blindly.
+
+If the user asks to stop a tracked operation, pass its `operationId` to
+`cancel-collection-operation`. `requested: true` acknowledges the request,
+not the outcome. A queued operation may be stopped before it starts; a
+running operation may refuse cancellation or finish first. Check the
+same ID until the status is known. Cancellation does not roll back changes
+and should not be resent after a lost acknowledgement.
+
+### Study statistics
+
+- `get-study-stats` — reports review counts for today and recent days with
+  activity across the collection. `limitDays` defaults to 30 active days,
+  not calendar days. Today uses Anki's study-day boundary. V1 also returns
+  `todayDate` and `nextDayAt`; legacy returns `null` for those fields.
+- `get-study-summary` (**v1**) — reports totals for the collection (`{}`)
+  or one `deckId` and its descendants. It includes card counts, notes linked
+  to cards, recorded reviews, and review time across available history.
+  Cardless notes do not count. Use `get-deck-stats` for current scheduler
+  workload instead of interpreting historical totals as due counts.
 
 ## Troubleshooting
 
-### The compiled entry point cannot be found
+| Symptom | What to check |
+| --- | --- |
+| Client cannot launch the server | Confirm Node.js 24+ is on the client's PATH. For a source checkout, run `npm run build` and verify the absolute path to `dist/mcp/server.js`. Before the first npm release, use the source setup. |
+| Server appears to wait silently | This is expected for stdio. The client must launch it and send MCP messages. The process does not listen on an MCP HTTP port. |
+| Connection refused or `ANKI_NETWORK_ERROR` | Keep Anki Desktop open, verify the AnkiConnect add-on is enabled, and check `ANKI_URL`. |
+| `ANKI_CONFIGURATION_ERROR` | Check the URL, API mode, timeout, or required directory setting. Configuration errors do not send the invalid request. |
+| HTTP error, invalid JSON, or invalid response | Check the direct AnkiConnect base endpoint and mode. Do not include `/api/v1` in `ANKI_URL`. A proxy login page or redirect is not an API response. |
+| `ANKI_V1_ERROR` / `methodNotFound` | Check that AnkiConnect exposes v1 and supports the method. Use legacy only for tools that support it. |
+| Stale session, cursor, hash, or token | Open the intended profile, repeat the read or preview, and review the new result before applying. |
+| Timeout, disconnected client, or failed verification | Do not assume nothing happened. Check operation status or current Anki data before retrying. |
 
-Run the build before starting the compiled server:
+For a read-only v1 endpoint check, use the base address configured in your
+client:
 
 ```bash
-npm run build
+curl -fsS http://127.0.0.1:8765/api/v1 \
+  -H 'Content-Type: application/json' \
+  --data '{"jsonrpc":"2.0","id":1,"method":"collection.get","params":{}}'
 ```
 
-### The server cannot connect to Anki
+All AnkiConnect exchanges in one server process share a four-request FIFO
+limit. The request deadline includes queue time, connection, headers, and
+body reading. It does not set the MCP client's overall timeout and is
+separate from the public HTTPS media download deadline. HTTP aborts do not
+automatically cancel an Anki operation.
 
-Check that:
+## Development and releases
 
-- Anki is running;
-- the AnkiConnect-compatible API is available;
-- `ANKI_URL` is present and points to the correct endpoint.
-
-Connection and API errors include a readable code:
-
-| Code | Meaning / next check |
+| Command | Purpose |
 | --- | --- |
-| `ANKI_CONFIGURATION_ERROR` | Missing/invalid URL or timeout; no HTTP request was sent. |
-| `ANKI_INVALID_REQUEST` | Parameters cannot be serialized as JSON; no HTTP request was sent. |
-| `ANKI_TIMEOUT` | Queue waiting or the HTTP exchange exceeded the request deadline. The message states whether sending had started. Check load/Anki responsiveness or adjust `ANKI_REQUEST_TIMEOUT_MS`. |
-| `ANKI_REQUEST_CANCELLED` | A low-level caller cancelled the request. The message states whether sending had started. |
-| `ANKI_NETWORK_ERROR` | Connection/TLS failure or an interrupted body. Check Anki, AnkiConnect, the endpoint, and any reported network code. |
-| `ANKI_HTTP_ERROR` | Unexpected HTTP status, including redirects. Check the direct API URL, proxy, and authentication settings. |
-| `ANKI_INVALID_JSON` | The endpoint returned invalid JSON, for example an HTML login page. |
-| `ANKI_INVALID_RESPONSE` | The AnkiConnect envelope, `multi` replies, or v1 response did not match the expected contract. |
-| `ANKI_V1_ERROR` | The v1 endpoint returned a JSON-RPC error. Inspect the stable error type and code; a stale cursor needs a fresh search. |
+| `npm ci` | Install dependencies from the lockfile. |
+| `npm run dev` | Run the TypeScript stdio entry point in watch mode. |
+| `npm test` | Run unit, integration, and stdio tests without changing a real Anki collection. |
+| `npm run typecheck` | Check application and test types without emitting files. |
+| `npm run build` | Clean and compile application code into `dist/`; tests are not bundled. |
+| `npm start` | Run `dist/mcp/server.js` after building. |
+| `npm pack --dry-run` | Review the files that would be shipped to npm. Run after building. |
 
-Transport messages omit the endpoint, request parameters, raw response content,
-and native error causes. Legacy action errors still include the AnkiConnect
-message; v1 errors expose only the method and stable error type/code.
-After a request was started, treat failure as an **unknown outcome**, especially
-for mutations or `multi`; inspect Anki instead of blindly repeating the action.
+The server uses the MCP TypeScript SDK v2. Tests cover MCP protocol revisions
+`2025-11-25` and `2026-07-28`, independent of the AnkiConnect API mode.
+The stdio inbound buffer limit is 40 MiB, allowing up to 25 MiB of media
+encoded as base64 plus JSON overhead. Clients can impose smaller limits.
+Keep logs on stderr and reserve stdout for MCP messages.
 
-For internal TypeScript callers, `callAnki`, `invokeAnki`, and `invokeAnkiMulti`
-accept optional `{ timeoutMs, signal }` request options. A per-call timeout takes
-precedence over the environment/default. `AnkiRequestError` exposes `kind`,
-`action`, `mayHaveExecuted`, `status`, and `timeoutMs`; `mayHaveExecuted: true`
-means sending started, not proof that Anki executed the action. The optional
-signal is a low-level API: MCP request cancellation is not automatically wired
-to it, and cancelling a client request must not be treated as a rollback.
+```text
+anki-api/              Typed AnkiConnect clients, v1 adapters, and HTTP transport
+mcp/create-server.ts   Server factory and tool registration
+mcp/tools/             Domain tools, schemas, and guard logic
+mcp/server.ts          CLI entry point
+mcp/stdio.ts           MCP transport and protocol compatibility
+tests/                Unit, API, MCP, and stdio tests
+dist/                 Generated application build
+```
 
-### The server appears to wait without printing anything
+When adding a tool, put the native API call in `anki-api/` and the MCP
+handler in the relevant `mcp/tools/` module. Define Zod input/output
+schemas, register the tool in its domain, and test preview, apply, and error
+behavior where applicable. Use `.js` extensions for relative imports in
+TypeScript because the project uses NodeNext and emits Node.js ESM.
 
-This is expected for an MCP server using `stdio`. It waits for protocol
-messages from an MCP client.
+[GitHub Actions](https://github.com/Ryhus/anki-mcp/actions) runs install,
+tests, type checking, build, and package inspection on pull requests
+and pushes to `main` and `develop`. It does not publish automatically.
+
+For maintainers preparing a release:
+
+1. Run the same checks from a clean checkout and install the actual
+   `npm pack` archive into a separate directory. Verify the `anki-mcp` bin
+   and check that the archive includes only the built server, README,
+   license, and package metadata.
+2. Open a PR from `develop` to `main` and wait for the `Validate` check on
+   the release code. Merge through the PR and tag the merged commit with
+   the version from `package.json`, for example `v0.1.0`.
+3. For an npm release, verify that `npm whoami` uses an account with
+   publishing access to `@ryhus`. Publish from the verified release
+   checkout; `npm publish --access public` makes the scoped package public.
+   Verify that the pinned package command installs before announcing it.
+   See [npm's scoped publishing guide](https://docs.npmjs.com/creating-and-publishing-scoped-public-packages/).
 
 ## License
 
-This project is licensed under the [MIT License](LICENSE).
+[MIT](LICENSE).
