@@ -1,6 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/server";
 import { withToolErrorHandling } from "../../utils/tool-handler.js";
 import { createNotes, createNotesConfig } from "./create-notes.js";
+import { convertNotesToNoteType, convertNotesToNoteTypeConfig } from "./convert-notes-to-note-type.js";
 import {
   deleteNotesAndCards,
   deleteNotesAndCardsConfig,
@@ -48,6 +49,7 @@ export function registerNoteTools(server: McpServer): void {
     updateNoteFieldsConfig,
     withToolErrorHandling(updateNoteFields),
   );
+  server.registerTool("convert-notes-to-note-type", convertNotesToNoteTypeConfig, withToolErrorHandling(convertNotesToNoteType));
   server.registerTool(
     "edit-note-tags",
     editNoteTagsConfig,

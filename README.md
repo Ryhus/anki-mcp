@@ -712,6 +712,8 @@ applied.
   field hashes before writing any note, and verifies saved values after applying.
 - `edit-note-tags` adds and removes selected tags without replacing unrelated
   tags.
+- `convert-notes-to-note-type` previews and applies native conversion of
+  explicit Notes to another Normal Note Type without duplicating them.
 - `list-tags` returns a filtered, paginated view of collection tags.
 - `delete-notes-and-cards` previews deletion of explicit Note IDs and all their
   generated Cards. Applying requires a reviewed impact hash and confirmation;
@@ -735,6 +737,40 @@ cursor. Use `pagination: "offset"` for an exact total, or supply an explicit
 V1 offset mode walks the native search pages to count the matches; this can
 be slower than a single cursor page and does not call legacy. Legacy mode
 defaults to offset and does not support native cursors.
+
+#### Converting Notes to another Note Type (v1)
+
+Select up to 50 explicit Note IDs from one Normal Note Type and an existing
+destination ID from `list-note-types`:
+
+```json
+{"noteIds":[1234567890123],"targetNoteTypeId":1234567890999}
+```
+
+The default dry run reports Anki's proposed mappings, counts nonempty values
+in unmapped fields, samples Card IDs that would stay or be removed, and
+gives an upper bound on newly generated Cards. Anki can map different names
+by ordinal; review the maps even if the names look similar. Override either
+map with a complete list such as `{"target":"Question","source":"Front"}`
+for each destination, using `source: null` for an empty field or a template
+slot with no old Card mapped to it. Source names cannot be reused.
+
+Apply the exact reviewed selection and mapping with `dryRun: false`,
+`expectedImpactHash`, and `confirmConversion: true`. Also set
+`confirmDataLoss: true` if nonempty values or Cards would be discarded,
+and `confirmCardCreation: true` if new Cards could be generated. The hash
+binds both schemas, the active session, full field values, tags, Card IDs
+and scheduling state. The tool refreshes Anki's native plan token on apply.
+
+This first version deliberately blocks Cloze conversions, Cards in filtered
+decks, an empty mapped first field, and any Note that would retain no
+existing Card. Use batches within the 500-Card review limit. Verification
+checks unchanged Note IDs and tags, exact mapped HTML, removed/new Card
+IDs, and the mapped Cards' template, deck placement and reported scheduling
+fields. It does not verify each review log entry or predict rendered
+content. Removed Cards can lose access to their study history, and a
+conversion can require a full Anki sync. The preflight and write are not
+atomic; there is no automatic backup, retry or rollback.
 
 #### Note creation outcomes
 
