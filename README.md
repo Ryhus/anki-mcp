@@ -701,6 +701,8 @@ applied.
 
 - `search-notes` searches with Anki query syntax and returns a bounded page of
   field previews, tags, and generated card IDs.
+- `find-empty-notes` uses AnkiConnect v1 to page through Notes with no Cards,
+  empty fields, or empty rendered questions. It never deletes anything.
 - `get-note-details` returns complete ordered fields, per-field SHA-256 hashes,
   and metadata for selected notes.
 - `validate-note-drafts` checks decks, note types, field names, empty-card
@@ -737,6 +739,31 @@ cursor. Use `pagination: "offset"` for an exact total, or supply an explicit
 V1 offset mode walks the native search pages to count the matches; this can
 be slower than a single cursor page and does not call legacy. Legacy mode
 defaults to offset and does not support native cursors.
+
+#### Finding empty Notes (v1)
+
+Use `find-empty-notes` with `ANKI_API_MODE=v1` and one native criterion:
+
+- `noCards`: the Note has no Cards but may still contain useful field values.
+- `allFieldsEmpty`: all Note fields are empty according to Anki's
+  HTML-aware normalization.
+- `allQuestionsEmpty`: all possible Card questions for the Note render empty,
+  not just one of its questions. The Note may still contain field values.
+
+```json
+{"criterion":"noCards","query":"tag:inbox","limit":20}
+```
+
+The optional Anki `query` narrows the initial scan; `limit` only bounds the
+number of candidates per page (default 20, maximum 100). Continue with
+`cursor` set to `nextCursor` and the same criterion, query, and limit.
+A null cursor ends the scan. There is no exact total, and a rejected or
+consumed cursor requires restarting the scan. The candidate IDs are a
+snapshot; a Note may change or disappear before its details are loaded.
+
+Review the candidates before taking any action. If you decide to delete
+specific Notes, recheck them first and use the separate
+`delete-notes-and-cards` dry run to review the deletion impact.
 
 #### Converting Notes to another Note Type (v1)
 

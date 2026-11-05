@@ -81,12 +81,18 @@ export async function readAllV1Pages<T>(
   throw invalidAnkiV1Response(method);
 }
 
-export async function searchV1IdPage(
-  ctx: V1AdapterContext, method: "notes.search" | "cards.search", query: string, limit: number, cursor?: string,
+export async function readV1IdPage(
+  ctx: V1AdapterContext, method: string, params: Record<string, unknown>, limit: number,
 ) {
-  const { ids, nextCursor } = await ctx.request(method, { query, limit, ...(cursor === undefined ? {} : { cursor }) }, idPageSchema);
+  const { ids, nextCursor } = await ctx.request(method, { ...params, limit }, idPageSchema);
   if (ids.length > limit || new Set(ids).size !== ids.length) throw invalidAnkiV1Response(method);
   return { ids, nextCursor };
+}
+
+export function searchV1IdPage(
+  ctx: V1AdapterContext, method: "notes.search" | "cards.search", query: string, limit: number, cursor?: string,
+) {
+  return readV1IdPage(ctx, method, { query, ...(cursor === undefined ? {} : { cursor }) }, limit);
 }
 
 export async function searchAllV1Ids(ctx: V1AdapterContext, method: "notes.search" | "cards.search", query: string): Promise<number[]> {

@@ -17,6 +17,7 @@ const noteSchema = z.object({
   cardIds: z.array(v1EntityIdSchema),
   modifiedAt: z.iso.datetime(),
 });
+export type V1Note = z.infer<typeof noteSchema>;
 const noteBatchSchema = z.object({
   items: z.array(z.union([
     z.strictObject({ index: z.number().int().nonnegative(), result: noteSchema }),
@@ -26,7 +27,7 @@ const noteBatchSchema = z.object({
 
 /** Loads notes in input order, distinguishing missing notes from other failures. */
 export async function getV1Notes(ids: readonly number[], session: string, options?: AnkiRequestOptions) {
-  const notes: z.infer<typeof noteSchema>[] = [];
+  const notes: V1Note[] = [];
   const missingNoteIds: number[] = [];
   if (ids.length === 0) return { notes, missingNoteIds };
 

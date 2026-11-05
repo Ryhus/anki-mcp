@@ -2,6 +2,7 @@ import type {
   AnkiNoteFields,
   AnkiNoteInfo,
 } from "../../../anki-api/notes/note-types.js";
+import type { V1Note } from "../../../anki-api/v1/anki-v1-note-client.js";
 import type {
   NoteDetails,
   NoteSummary,
@@ -21,6 +22,18 @@ export function toNoteSummary(note: AnkiNoteInfo): NoteSummary {
     ),
     cardIds: [...note.cards],
     modifiedAt: new Date(note.mod * 1_000).toISOString(),
+  };
+}
+
+/** Uses the same compact field previews for v1 search and diagnostics. */
+export function toV1NoteSummary(note: V1Note): NoteSummary {
+  return {
+    noteId: note.id,
+    modelName: note.noteType.name,
+    tags: note.tags,
+    fieldPreviews: toNoteFieldPreviews(Object.entries(note.fields)),
+    cardIds: note.cardIds,
+    modifiedAt: new Date(note.modifiedAt).toISOString(),
   };
 }
 

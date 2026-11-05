@@ -6,7 +6,7 @@ import { READ_ONLY_TOOL_ANNOTATIONS } from "../../utils/tool-annotations.js";
 import { createToolResult } from "../../utils/tool-result.js";
 import { resolveSearchPagination, searchPaginationShape, validateSearchPagination } from "../../utils/search-pagination.js";
 import { loadNotes } from "./note-loader.js";
-import { toNoteFieldPreviews, toNoteSummary } from "./note-normalizers.js";
+import { toNoteSummary, toV1NoteSummary } from "./note-normalizers.js";
 import {
   NOTE_SEARCH_LIMIT,
   noteIdSchema,
@@ -60,14 +60,7 @@ export async function searchNotes({
   const mode = resolveSearchPagination({ pagination, cursor, offset: requestedOffset }, "notes.search");
   if (mode === "cursor") {
     const { notes: page, missingNoteIds, nextCursor } = await getV1NoteSearchPage(query, limit, cursor);
-    const notes = page.map((note) => ({
-      noteId: note.id,
-      modelName: note.noteType.name,
-      tags: note.tags,
-      fieldPreviews: toNoteFieldPreviews(Object.entries(note.fields)),
-      cardIds: note.cardIds,
-      modifiedAt: new Date(note.modifiedAt).toISOString(),
-    }));
+    const notes = page.map(toV1NoteSummary);
     return createToolResult(
       `Returned ${notes.length} matching note${notes.length === 1 ? "" : "s"}${nextCursor === null ? "." : " with more results available."}`,
       {

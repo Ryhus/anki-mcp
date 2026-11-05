@@ -80,7 +80,7 @@ for (const version of ["2025-11-25", "2026-07-28"] as const) {
       });
       t.after(async () => { await client.close(); await handle.close(); });
       await client.connect(clientTransport);
-      assert.equal((await client.listTools()).tools.length, 54);
+      assert.equal((await client.listTools()).tools.length, 55);
       clients.push(client);
     }
     assert.equal(stats.actions.length, 0);

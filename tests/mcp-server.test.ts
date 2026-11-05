@@ -24,7 +24,7 @@ const EXPECTED_TOOLS = [
   "add-note-type-field", "rename-note-type-field", "reposition-note-type-field",
   "delete-note-type-field", "add-note-type-template", "rename-note-type-template",
   "reposition-note-type-template", "delete-note-type-template",
-  "update-note-type-styling", "update-note-type-templates", "search-notes",
+  "update-note-type-styling", "update-note-type-templates", "search-notes", "find-empty-notes",
   "get-note-details", "validate-note-drafts", "create-notes", "update-note-fields", "convert-notes-to-note-type",
   "edit-note-tags", "list-tags", "delete-notes-and-cards", "search-media-files",
   "get-media-file", "store-media-file", "find-media-references",

@@ -7,6 +7,7 @@ import {
   deleteNotesAndCardsConfig,
 } from "./delete-notes-and-cards.js";
 import { editNoteTags, editNoteTagsConfig } from "./edit-note-tags.js";
+import { findEmptyNotes, findEmptyNotesConfig } from "./find-empty-notes.js";
 import {
   getNoteDetails,
   getNoteDetailsConfig,
@@ -29,6 +30,7 @@ export function registerNoteTools(server: McpServer): void {
     searchNotesConfig,
     withToolErrorHandling(searchNotes),
   );
+  server.registerTool("find-empty-notes", findEmptyNotesConfig, withToolErrorHandling(findEmptyNotes));
   server.registerTool(
     "get-note-details",
     getNoteDetailsConfig,
