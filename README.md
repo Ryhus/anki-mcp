@@ -322,6 +322,8 @@ deck ID with `list-decks`. This tool requires `ANKI_API_MODE=v1`.
   standalone HTML documents for one existing card, in light or dark mode.
 - `predict-card-intervals` previews native scheduler intervals for Again,
   Hard, Good, and Easy without answering the card. Requires AnkiConnect v1.
+- `get-card-due-status` checks one card's due time and per-card availability,
+  with optional learn-ahead. Requires AnkiConnect v1.
 - `get-card-review-history` returns bounded, newest-first review history.
 - `set-card-suspension` suspends or unsuspends cards.
 - `set-card-flag` safely applies one of Anki's supported flag colors.
@@ -343,6 +345,16 @@ provide a numeric interval. This is a scheduler snapshot, not an exact due
 date, a check that the card can be reviewed now, or the custom state of an
 open Anki reviewer. The tool does not submit answers, change scheduling,
 write review history, or expose Anki's internal answer token.
+
+With `ANKI_API_MODE=v1`, call `get-card-due-status` with
+`{"cardId":1234567890123}` for the current status. `dueNow` reports a
+scheduled time or study day that has arrived; a new card can have
+`dueNow: false` and `available: true`. `learnAhead` reports whether a
+not-yet-due card is within Anki's configured learn-ahead window. That flag
+is independent of the request option: `includeLearnAhead: true` allows such
+a card to count as `available` without changing `dueNow`. The option defaults
+to false. This is a read-only, per-card check: `available` does not account for
+daily deck limits or promise that the card is next in the reviewer.
 
 Low-level scheduling field and ease-factor setters are not exposed to MCP
 clients. A general-purpose answer/reviewer tool is not exposed. However,

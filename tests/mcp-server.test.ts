@@ -17,7 +17,7 @@ const EXPECTED_TOOLS = [
   "list-deck-presets", "get-deck-preset", "create-deck-preset", "update-deck-preset",
   "assign-deck-preset", "delete-deck-preset",
   "move-cards-to-deck", "delete-deck-and-cards", "search-cards",
-  "get-card-details", "get-card-preview", "get-card-review-history", "predict-card-intervals", "set-card-suspension",
+  "get-card-details", "get-card-preview", "get-card-review-history", "predict-card-intervals", "get-card-due-status", "set-card-suspension",
   "set-card-flag", "reschedule-cards", "reset-cards-to-new",
   "start-card-relearning", "list-note-types", "get-note-type-schema",
   "get-note-type-design", "clone-note-type", "create-note-type", "rename-note-type",

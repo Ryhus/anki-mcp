@@ -4,6 +4,7 @@ import {
   getCardDetails,
   getCardDetailsConfig,
 } from "./get-card-details.js";
+import { getCardDueStatus, getCardDueStatusConfig } from "./get-card-due-status.js";
 import { getCardPreview, getCardPreviewConfig } from "./get-card-preview.js";
 import {
   getCardReviewHistory,
@@ -52,6 +53,11 @@ export function registerCardTools(server: McpServer): void {
     "predict-card-intervals",
     predictCardIntervalsConfig,
     withToolErrorHandling(predictCardIntervals),
+  );
+  server.registerTool(
+    "get-card-due-status",
+    getCardDueStatusConfig,
+    withToolErrorHandling(getCardDueStatus),
   );
   server.registerTool(
     "set-card-suspension",

@@ -23,6 +23,26 @@ const predictionSchema = z.object({
   answers: z.array(cardPredictionAnswerSchema).min(1).max(v1CardRatings.length),
 });
 
+export const cardDueFlagsSchema = z.object({
+  dueNow: z.boolean().describe("The scheduled time or study day has arrived. Excludes new cards and learn-ahead."),
+  available: z.boolean().describe("Eligible by the card's queue and timing, including new cards. Ignores daily deck limits and review order."),
+  learnAhead: z.boolean().describe("The card is not due yet but is within Anki's learn-ahead window, regardless of includeLearnAhead."),
+});
+
+const cardDueReplySchema = cardDueFlagsSchema.extend({ cardId: v1EntityIdSchema });
+
+/** Reads Anki's queue-aware eligibility without using local time or review history. */
+export async function readCardDueStatus(cardId: number, includeLearnAhead: boolean) {
+  const method = "scheduling.getDue";
+  if (!useAnkiV1(method)) {
+    throw new AnkiRequestError("configuration", method, "Card due status requires ANKI_API_MODE=v1.", false);
+  }
+  const ctx = await openV1Adapter({});
+  const status = await ctx.request(method, { cardId: String(cardId), includeLearnAhead }, cardDueReplySchema);
+  if (status.cardId !== cardId) throw invalidAnkiV1Response(method);
+  return { ...status, includeLearnAhead };
+}
+
 /** Internal prediction, including the token needed by guarded relearning. */
 export async function predictV1Card(ctx: V1AdapterContext, cardId: number) {
   const result = await ctx.request(predictMethod, { cardId: String(cardId) }, predictionSchema);
