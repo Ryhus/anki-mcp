@@ -21,7 +21,7 @@ const inputSchema = z.object({
 
 export const updateDeckPresetConfig = {
   title: "Update deck preset",
-  description: "Previews a preset rename or a patch to common learning options, showing every deck using it. Requires an impact hash and explicit confirmation to apply. Does not request full FSRS rescheduling. Requires AnkiConnect v1.",
+  description: "Previews a preset rename or a patch to learning, display order, or audio options, showing every deck using it. Requires an impact hash and explicit confirmation to apply. Does not request full FSRS rescheduling. Requires AnkiConnect v1.",
   inputSchema,
   outputSchema: z.object({
     ...presetPreviewOutput, presetId: presetIdSchema, beforeName: z.string(), afterName: z.string(),

@@ -15,6 +15,7 @@ export const presetImpactLimit = 100;
 
 const dayLimit = z.number().int().min(0).max(9_999);
 const steps = z.array(z.number().positive().max(1_440)).max(20);
+const reviewMix = z.enum(["mixed", "afterReviews", "beforeReviews"]);
 export const presetPatchSchema = z.strictObject({
   newPerDay: dayLimit.optional(),
   reviewsPerDay: dayLimit.optional(),
@@ -25,6 +26,21 @@ export const presetPatchSchema = z.strictObject({
   buryNew: z.boolean().optional(),
   buryReviews: z.boolean().optional(),
   buryDayLearning: z.boolean().optional(),
+  newGatherOrder: z.enum([
+    "deck", "deckThenRandomNotes", "lowestPosition", "highestPosition", "randomNotes", "randomCards",
+  ]).optional().describe("How Anki gathers new cards before applying their display sort."),
+  newSortOrder: z.enum([
+    "template", "none", "templateThenRandom", "randomNoteThenTemplate", "randomCard",
+  ]).optional().describe("How gathered new cards are shown; none preserves the gather order."),
+  newMix: reviewMix.optional().describe("When to show new cards relative to review cards."),
+  dayLearningMix: reviewMix.optional().describe("When to show learning or relearning cards that crossed a study day, relative to review cards."),
+  reviewOrder: z.enum([
+    "day", "dayThenDeck", "deckThenDay", "intervalAscending", "intervalDescending", "easeAscending", "easeDescending",
+    "retrievabilityAscending", "retrievabilityDescending", "relativeOverdueness", "random", "added", "reverseAdded",
+  ]).optional().describe("Review card sort order. Some orders depend on Anki's active scheduler; this does not enable FSRS."),
+  disableAutoplay: z.boolean().optional().describe("Do not automatically play card audio; manual playback remains available."),
+  skipQuestionOnAnswerReplay: z.boolean().optional().describe("Skip question-side audio when manually replaying audio from the answer."),
+  waitForAudio: z.boolean().optional().describe("Wait for audio to finish when Auto Advance is in use; does not enable Auto Advance."),
 }).refine((settings) => Object.values(settings).some((value) => value !== undefined), "Supply at least one supported setting");
 
 export const presetImpactHashSchema = z.string().regex(/^[0-9a-f]{64}$/u);

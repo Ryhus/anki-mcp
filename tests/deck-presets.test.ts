@@ -23,7 +23,11 @@ function fixture(t: TestContext) {
   });
   const presets = new Map(["1", "2", "3"].map((id, index) => [id, {
     id, name: ["Default", "Shared", "Unused"][index]!,
-    settings: { newPerDay: 10, reviewsPerDay: 100, desiredRetention: Math.fround(0.90), buryNew: false },
+    settings: {
+      newPerDay: 10, reviewsPerDay: 100, desiredRetention: Math.fround(0.90), buryNew: false,
+      newGatherOrder: "deck", newSortOrder: "template", newMix: "mixed", dayLearningMix: "mixed", reviewOrder: "day",
+      disableAutoplay: false, skipQuestionOnAnswerReplay: false, waitForAudio: true,
+    },
     modifiedAt: stamp,
   }]));
   const decks = [
@@ -35,7 +39,7 @@ function fixture(t: TestContext) {
   const operations = new Map<string, { method: string; result: unknown }>();
   const calls: string[] = [];
   const writes: Array<{ method: string; params: Record<string, unknown> }> = [];
-  const state = { presets, decks, calls, writes, partial: false, loseStatus: false };
+  const state = { presets, decks, calls, writes, partial: false, loseStatus: false, ignoredSetting: null as string | null };
   t.mock.method(globalThis, "fetch", async (url: string, init: RequestInit) => {
     assert.equal(new URL(url).pathname, "/api/v1");
     const { method, params, id } = JSON.parse(String(init.body));
@@ -69,7 +73,9 @@ function fixture(t: TestContext) {
       assert.equal(params.rescheduleFsrs, false);
       const preset = presets.get(params.preset.id)!;
       if (params.name !== undefined) preset.name = params.name;
-      Object.assign(preset.settings, params.settings);
+      Object.assign(preset.settings, Object.fromEntries(
+        Object.entries(params.settings ?? {}).filter(([key]) => key !== state.ignoredSetting),
+      ));
       if (params.settings?.desiredRetention !== undefined) preset.settings.desiredRetention = Math.fround(params.settings.desiredRetention);
       result = preset;
     } else if (method === "deckPresets.assign") {
@@ -161,6 +167,80 @@ for (const protocol of ["2025-11-25", "2026-07-28"] as const) {
     assert.deepEqual(state.writes.map(({ method }) => method), ["deckPresets.create", "deckPresets.update", "deckPresets.assign", "deckPresets.delete"]);
   });
 }
+
+const displayAndAudio = {
+  newGatherOrder: "deckThenRandomNotes", newSortOrder: "randomNoteThenTemplate",
+  newMix: "afterReviews", dayLearningMix: "beforeReviews", reviewOrder: "intervalAscending",
+  disableAutoplay: true, skipQuestionOnAnswerReplay: true, waitForAudio: false,
+};
+
+for (const protocol of ["2025-11-25", "2026-07-28"] as const) {
+  test(`MCP ${protocol} previews and verifies only the reviewed display and audio changes`, async (t) => {
+    const state = fixture(t);
+    const call = await connect(t, protocol);
+    const name = "update-deck-preset";
+    for (const settings of [
+      { newGatherOrder: "random" }, { newSortOrder: "deck" }, { dayLearningMix: "afterNew" },
+      { reviewOrder: "ascending" }, { disableAutoplay: "true" }, { waitForAudio: 0 },
+      { newInsertOrder: "random" }, { fsrs: true }, { answerAction: "again" },
+    ]) {
+      assert.equal((await call(name, { presetId: 2, settings })).isError, true);
+    }
+    assert.equal(state.calls.length, 0);
+
+    const patch = { presetId: 2, settings: { ...displayAndAudio, newPerDay: 10 } };
+    const update = async (args: Record<string, unknown>) =>
+      updateDeckPresetConfig.outputSchema.parse((await call(name, args)).structuredContent);
+    const before = { ...state.presets.get("2")!.settings };
+    const preview = await update(patch);
+    assert.ok(preview.dryRun && !preview.applied && preview.impactHash);
+    assert.deepEqual(preview.affectedDecks.map(({ id }) => id), [11, 12]);
+    assert.deepEqual(Object.fromEntries(preview.settingChanges.map(({ key, after }) => [key, after])), displayAndAudio);
+    for (const { key, before: previous } of preview.settingChanges) {
+      assert.equal(previous, before[key as keyof typeof before]);
+    }
+    assert.equal(state.writes.length, 0);
+
+    const apply = { ...patch, dryRun: false, confirmChanges: true, expectedImpactHash: preview.impactHash };
+    const preset = state.presets.get("2")!;
+    preset.settings.waitForAudio = false;
+    const stale = await update(apply);
+    assert.equal(stale.applied, false);
+    assert.match(stale.blockers.join(" "), /changed since the preview/u);
+    assert.equal(state.writes.length, 0);
+    preset.settings.waitForAudio = true;
+
+    const saved = await update(apply);
+    assert.ok(saved.applied && saved.verified);
+    assert.deepEqual(state.writes, [{ method: "deckPresets.update", params: {
+      preset: { id: "2" }, settings: displayAndAudio, rescheduleFsrs: false, session: "s",
+    } }]);
+    assert.deepEqual(preset.settings, { ...before, ...displayAndAudio });
+    assert.deepEqual(state.calls.slice(-4), ["deckPresets.update", "operations.get", "deckPresets.get", "decks.list"]);
+
+    const same = await update(patch);
+    assert.deepEqual(same.settingChanges, []);
+    const noOp = await update({ ...apply, expectedImpactHash: same.impactHash });
+    assert.ok(!noOp.applied && noOp.verified);
+    assert.equal(state.writes.length, 1);
+  });
+}
+
+test("an acknowledged display/audio update with mismatched readback does not report success", async (t) => {
+  const state = fixture(t);
+  const call = await connect(t, "2026-07-28");
+  const patch = { presetId: 2, settings: { newMix: "afterReviews", disableAutoplay: true } };
+  const preview = updateDeckPresetConfig.outputSchema.parse((await call("update-deck-preset", patch)).structuredContent);
+  state.ignoredSetting = "disableAutoplay";
+  const result = await call("update-deck-preset", {
+    ...patch, dryRun: false, confirmChanges: true, expectedImpactHash: preview.impactHash,
+  });
+  assert.equal(result.isError, true);
+  assert.match(JSON.stringify(result.content), /may already be applied/u);
+  assert.equal(state.writes.length, 1);
+  assert.equal(state.presets.get("2")?.settings.newMix, "afterReviews");
+  assert.equal(state.presets.get("2")?.settings.disableAutoplay, false);
+});
 
 test("a partial assignment or missing operation result reports uncertainty without retrying", async (t) => {
   const state = fixture(t);

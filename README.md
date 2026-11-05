@@ -516,11 +516,26 @@ changed Anki; there is no replay or rollback.
 
 Editable options are daily new/review limits, learning/relearning steps in
 minutes, maximum interval, FSRS desired retention, and the three burying
-flags. Reads show other settings, but raw FSRS weights and collection-wide
-settings are not writable through these tools. Changing a shared preset
-affects all dependent decks; per-deck overrides can still apply. The tools
-do not request full FSRS rescheduling or predict individual due dates,
-but native Anki updates can affect dependent learning state.
+flags. Display order also supports `newGatherOrder`, `newSortOrder`,
+`newMix`, `dayLearningMix`, and `reviewOrder`. Gathering selects new cards;
+sorting orders the cards already gathered. Anki uses these options from
+the deck selected for study. Some review sort orders depend on whether
+FSRS or SM-2 is active. See [Anki's display order guide](https://docs.ankiweb.net/manual/deck-options#display-order).
+
+Audio options are `disableAutoplay`, `skipQuestionOnAnswerReplay`, and
+`waitForAudio`. The last option only affects audio waiting during Auto
+Advance; it does not enable Auto Advance. For example:
+
+```json
+{"presetId":1,"settings":{"newMix":"afterReviews","disableAutoplay":true}}
+```
+
+Reads show other settings, but new-card insertion order, raw FSRS weights,
+and collection-wide settings are not writable through these tools.
+Changing a shared preset affects all dependent decks; per-deck overrides
+can still apply. The tools do not request full FSRS rescheduling or predict
+individual due dates, but native Anki updates can affect dependent learning
+state.
 
 Some AnkiConnect versions report `Deck counts unavailable.` when Anki omits
 the empty default deck from its scheduler tree. `get-deck-stats` isolates the
