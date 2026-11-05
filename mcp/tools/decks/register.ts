@@ -8,6 +8,7 @@ import {
 import { getCardDecks, getCardDecksConfig } from "./get-card-decks.js";
 import { getDeckStats, getDeckStatsConfig } from "./get-deck-stats.js";
 import { listDecks, listDecksConfig } from "./list-decks.js";
+import { renameDeck, renameDeckConfig } from "./rename-deck.js";
 import {
   moveCardsToDeck,
   moveCardsToDeckConfig,
@@ -27,6 +28,7 @@ export function registerDeckTools(server: McpServer): void {
     createDeckConfig,
     withToolErrorHandling(createDeck),
   );
+  server.registerTool("rename-deck", renameDeckConfig, withToolErrorHandling(renameDeck));
   server.registerTool(
     "get-deck-stats",
     getDeckStatsConfig,

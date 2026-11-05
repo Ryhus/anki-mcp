@@ -435,11 +435,21 @@ for card classes, night mode, and shared Note Type CSS.
 
 - `list-decks` lists every deck with its ID and hierarchy metadata.
 - `create-deck` creates a deck or returns the existing deck with the same name.
+- `rename-deck` renames a deck or moves its subtree under an existing parent
+  using native AnkiConnect v1, preserving deck and card IDs.
 - `get-deck-stats` returns scheduler counts for selected or all decks.
 - `get-card-decks` groups card IDs by their current deck.
 - `move-cards-to-deck` moves cards and creates the target deck when necessary.
 - `delete-deck-and-cards` previews deletion of a normal deck and its complete
   subtree, then requires a reviewed impact hash and explicit confirmation.
+
+`rename-deck` takes exact `name` and `newName` paths. It previews all affected
+paths and refuses collisions, moves into the source subtree, missing parents,
+and filtered destination parents. Apply with `dryRun: false`,
+`confirmRename: true`, and the reviewed `expectedImpactHash`. The hash covers
+the profile, subtree and destination parent; the server verifies paths and
+preset assignments by deck ID after the rename. Concurrent changes may
+still race the final write. This tool requires `ANKI_API_MODE=v1`.
 
 Low-level deck configuration ID operations are not exposed to MCP clients.
 Deck option management will be added separately after its behavior has been

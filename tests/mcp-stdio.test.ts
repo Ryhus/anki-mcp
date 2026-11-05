@@ -34,7 +34,7 @@ for (const version of ["2025-11-25", "2026-07-28"] as const) {
     t.after(() => client.close());
     await client.connect(transport);
     assert.equal(client.getNegotiatedProtocolVersion(), version);
-    assert.equal((await client.listTools()).tools.length, 46);
+    assert.equal((await client.listTools()).tools.length, 47);
     assert.match(stderr, /Anki MCP server running on stdio/u);
     assert.doesNotMatch(stderr, /Fatal MCP server error/u);
   });
@@ -69,7 +69,7 @@ test("stdio accepts a maximum-sized media payload without calling Anki", { timeo
   assert.equal(result.isError, true, "field validation should reject the filename, not the transport");
   assert.match(JSON.stringify(result.content), /filename/u);
   assert.deepEqual(errors, []);
-  assert.equal((await client.listTools()).tools.length, 46);
+  assert.equal((await client.listTools()).tools.length, 47);
 });
 
 test("stdio closes when the configured buffer limit is exceeded", { timeout: 5_000 }, async (t) => {
