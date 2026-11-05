@@ -19,7 +19,7 @@ for (const version of ["2025-11-25", "2026-07-28"] as const) {
     t.after(async () => { await client.close(); await handle.close(); });
     await client.connect(clientTransport);
     const { tools } = await client.listTools();
-    assert.equal(tools.length, 58);
+    assert.equal(tools.length, 59);
     assert.equal(state.requests.length, 0);
     const preview = await client.callTool({ name: "update-note-type-styling", arguments: { modelName: STYLE_MODEL_NAME, css: UPDATED_CSS } });
     const proposed = updateNoteTypeStylingConfig.outputSchema.parse(preview.structuredContent);
@@ -60,6 +60,6 @@ for (const version of ["2025-11-25", "2026-07-28"] as const) {
     assert.notEqual(observed.isError, true);
     assert.equal(state.css, ".card { color: green; }", "failed verification did not undo a successful write");
     assert.equal(state.writes, 3, "reading after an error does not retry or roll back");
-    assert.equal((await client.listTools()).tools.length, 58);
+    assert.equal((await client.listTools()).tools.length, 59);
   });
 }

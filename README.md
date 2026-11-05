@@ -299,6 +299,19 @@ host's midnight. V1 also returns `todayDate` and `nextDayAt`; legacy returns
 The two native counts are separate reads, so a review or day rollover can
 occur between them. For current scheduling counts by deck use `get-deck-stats`.
 
+`get-study-summary` is a read-only aggregate for the whole collection
+(`{}`) or one deck and its subdecks (`{"deckId":1234567890123}`). Find the
+deck ID with `list-decks`. This tool requires `ANKI_API_MODE=v1`.
+
+- `cardCount` includes existing cards in scope; `noteCount` counts distinct
+  Notes linked to those cards. Cardless Notes do not count.
+- `reviewCount` and `reviewTimeMs` describe recorded answers across the
+  available history, not the number due today or time spent in the app.
+- `newCount`, `learningCount`, `reviewCardCount`, and `suspendedCount`
+  are Anki's current card categories, not daily queue limits. Buried cards
+  are not returned as a separate category, so these counts need not add up
+  to `cardCount`.
+
 ### Card tools
 
 - `search-cards` searches with Anki query syntax and returns a bounded page of
