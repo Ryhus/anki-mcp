@@ -103,7 +103,7 @@ for (const version of ["2025-11-25", "2026-07-28"] as const) {
     });
     t.after(async () => { await client.close(); await handle.close(); });
     await client.connect(clientTransport);
-    assert.equal((await client.listTools()).tools.length, 64);
+    assert.equal((await client.listTools()).tools.length, 66);
     assert.deepEqual(calls, []);
     const decks = await client.callTool({ name: "list-decks" });
     assert.deepEqual(decks.structuredContent, { decks: [{ id: 1, name: "Default", parentName: null, depth: 0 }] });

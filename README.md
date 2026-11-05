@@ -701,6 +701,21 @@ share packages.
   generated from a note type.
 - `update-note-type-templates` validates and replaces selected front or back
   HTML templates in one Anki update.
+- `replace-note-type-text` previews and validates a case-sensitive, literal
+  replacement in the front HTML (`question`), back HTML (`answer`), and/or
+  `css` of explicitly selected Note Types. It does not change Note fields.
+
+With `ANKI_API_MODE=v1`, preview a replacement, for example
+`{"noteTypeIds":[1234567890123],"targets":["css"],"find":"#666","replace":"#555"}`.
+The preview reports occurrences per template side or CSS, design hashes,
+and validation issues. Use up to 20 Note Types and 100 templates per call;
+there is no collection-wide option. An empty replacement removes matches.
+Apply the same proposal with `dryRun: false`, `confirmReplacement: true`, and
+the reviewed `expectedImpactHash`. The server revalidates the designs, invokes
+Anki's native replacement only for affected IDs, and reads back the saved
+HTML/CSS. Shared designs affect all cards of those types. Concurrent edits
+can race with the write; an error may follow a partial change. Inspect Anki
+before retrying; there is no automatic rollback.
 
 AnkiConnect's legacy API calls note types "models", so most name-based
 note-type tools use `modelName` to match existing card payloads.
@@ -864,9 +879,19 @@ applied.
 - `convert-notes-to-note-type` previews and applies native conversion of
   explicit Notes to another Normal Note Type without duplicating them.
 - `list-tags` returns a filtered, paginated view of collection tags.
+- `delete-unused-tags` previews collection-wide cleanup of tag registrations
+  that no Note uses. It never removes a tag from a Note or deletes Notes or Cards.
 - `delete-notes-and-cards` previews deletion of explicit Note IDs and all their
   generated Cards. Applying requires a reviewed impact hash and confirmation;
   native searches verify the result.
+
+With `ANKI_API_MODE=v1`, call `delete-unused-tags` with `{}` for the candidate
+list, then apply with `dryRun: false`, `confirmDeletion: true`, and the
+reviewed `expectedImpactHash`. The tool scans tagged Notes, including those
+without cards, and refuses scans above 50,000 tagged Notes or 1,000 registered
+tags. Anki rechecks usage and deletes unused registrations across the active
+collection; an unused parent registration can disappear without removing any
+used child tag. Concurrent changes can race with the native operation.
 
 With `ANKI_API_MODE=v1`, ordinary `search-notes` calls use native cursor
 paging by default:

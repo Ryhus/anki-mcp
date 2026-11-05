@@ -8,6 +8,9 @@ import type { AnkiCreateNoteTypeInput, AnkiCreateNoteTypeTemplate, AnkiNoteTypeT
 
 const updateMethod = "noteTypes.update";
 export const deleteUnusedNoteTypeMethod = "noteTypes.deleteUnused";
+export const replaceNoteTypeTextMethod = "noteTypes.replaceText";
+export const noteTypeTextTargets = ["question", "answer", "css"] as const;
+export type NoteTypeTextTarget = (typeof noteTypeTextTargets)[number];
 type NoteTypeReference = { id: number } | { name: string };
 
 const noteTypeFieldStateSchema = v1EntitySummarySchema.extend({
@@ -130,4 +133,15 @@ export async function deleteUnusedManagedNoteType(ctx: V1AdapterContext, id: num
   const method = deleteUnusedNoteTypeMethod;
   const [changed] = await readV1Acks(ctx, method, { noteTypes: [toNativeRef({ id })] }, 1);
   if (changed !== true) throw invalidAnkiV1Response(method);
+}
+
+/** Native, case-sensitive literal replacement on explicitly reviewed Note Types. */
+export async function replaceManagedNoteTypeText(
+  ctx: V1AdapterContext, ids: number[], find: string, replace: string, targets: NoteTypeTextTarget[],
+): Promise<void> {
+  if (ids.length === 0) return;
+  const { changedCount } = await ctx.request(replaceNoteTypeTextMethod, {
+    noteTypes: ids.map((id) => toNativeRef({ id })), find, replace, targets,
+  }, z.object({ changedCount: z.number().int().nonnegative() }));
+  if (changedCount !== ids.length) throw invalidAnkiV1Response(replaceNoteTypeTextMethod);
 }

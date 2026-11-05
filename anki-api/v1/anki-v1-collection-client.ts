@@ -67,8 +67,8 @@ async function readV1NoteTypeDesign<T extends z.infer<typeof noteTypeDesignSchem
 }
 
 /** Gets an ordered field/template snapshot and its CSS in a single exchange. */
-export function getV1NoteTypeDesign(modelName: string, session?: string, options?: AnkiRequestOptions) {
-  return readV1NoteTypeDesign(modelName, noteTypeDesignSchema, session, options);
+export function getV1NoteTypeDesign(reference: string | number, session?: string, options?: AnkiRequestOptions) {
+  return readV1NoteTypeDesign(reference, noteTypeDesignSchema, session, options);
 }
 
 /** Reads the sort field in the same native snapshot as the cloneable design. */

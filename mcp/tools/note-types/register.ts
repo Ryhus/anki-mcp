@@ -43,6 +43,7 @@ import {
   renameNoteTypeTemplate,
   renameNoteTypeTemplateConfig,
 } from "./rename-note-type-template.js";
+import { replaceNoteTypeText, replaceNoteTypeTextConfig } from "./replace-note-type-text.js";
 import {
   repositionNoteTypeField,
   repositionNoteTypeFieldConfig,
@@ -153,4 +154,5 @@ export function registerNoteTypeTools(server: McpServer): void {
     updateNoteTypeTemplatesConfig,
     withToolErrorHandling(updateNoteTypeTemplates),
   );
+  server.registerTool("replace-note-type-text", replaceNoteTypeTextConfig, withToolErrorHandling(replaceNoteTypeText));
 }

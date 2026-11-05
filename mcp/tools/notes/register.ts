@@ -6,6 +6,7 @@ import {
   deleteNotesAndCards,
   deleteNotesAndCardsConfig,
 } from "./delete-notes-and-cards.js";
+import { deleteUnusedTags, deleteUnusedTagsConfig } from "./delete-unused-tags.js";
 import { editNoteTags, editNoteTagsConfig } from "./edit-note-tags.js";
 import { findEmptyNotes, findEmptyNotesConfig } from "./find-empty-notes.js";
 import {
@@ -64,6 +65,7 @@ export function registerNoteTools(server: McpServer): void {
     listTagsConfig,
     withToolErrorHandling(listTags),
   );
+  server.registerTool("delete-unused-tags", deleteUnusedTagsConfig, withToolErrorHandling(deleteUnusedTags));
   server.registerTool(
     "delete-notes-and-cards",
     deleteNotesAndCardsConfig,
