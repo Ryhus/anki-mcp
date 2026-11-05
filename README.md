@@ -583,6 +583,8 @@ are not authentication or proof of human approval.
   replacing its Notes or Cards. Requires AnkiConnect v1.
 - `set-note-type-sort-field` previews and changes the existing field shown
   in the Browser's Sort Field column for one note type. Requires AnkiConnect v1.
+- `delete-unused-note-type` previews removal of one explicitly selected note
+  type. It refuses used types and the last type. Requires AnkiConnect v1.
 - `clone-note-type` safely copies ordered field names, card template HTML, and
   shared CSS into a new independent note type without copying notes or cards.
 - `add-note-type-field` adds an empty field to every note of a note type,
@@ -629,6 +631,20 @@ and new sort fields. The tool reads back the new sort field and field order.
 This applies to every Note of that type. It does not reorder fields or
 change which first field Anki uses for duplicate checks. The existing
 `schemaHash` still hashes only ordered field names.
+
+To remove an unused type, preview `delete-unused-note-type` with its ID from
+`list-note-types`, for example `{"noteTypeId":1234567890123}`. Any Note using
+the type blocks deletion, even if that Note has no Cards. The last remaining
+type is also blocked. Apply with `dryRun: false`, `confirmDeletion: true`,
+and the reviewed `expectedImpactHash`. The hash binds the session and native
+type definition, including its fields, templates, and CSS. AnkiConnect checks
+usage again during deletion. The tool verifies that the selected ID is gone
+and that the other previously listed IDs remain.
+
+This deletes the type's definition and design, not its Notes or Cards. There
+is no MCP backup, retry, or rollback. Anki may require a full sync. The
+preflight and write are not atomic; inspect Anki before retrying if the
+outcome could not be verified.
 
 To create a note type from scratch, call `create-note-type` with ordered
 `fields` and `templates`. Its dry run validates unique names, field references,

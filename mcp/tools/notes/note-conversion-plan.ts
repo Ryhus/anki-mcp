@@ -6,6 +6,7 @@ import {
 import type { V1AdapterContext } from "../../../anki-api/v1/anki-v1-adapter-utils.js";
 import { getV1Cards } from "../../../anki-api/v1/anki-v1-cards-adapter.js";
 import { getV1Notes } from "../../../anki-api/v1/anki-v1-note-client.js";
+import { orderedJson } from "../../utils/ordered-json.js";
 import { calculateNoteFieldHash } from "./note-field-utils.js";
 import {
   CONVERSION_CARD_LIMIT, CONVERSION_FIELD_LIMIT, CONVERSION_SAMPLE_LIMIT, CONVERSION_TEMPLATE_LIMIT,
@@ -166,13 +167,4 @@ export async function prepareNoteConversion(
     cards,
   }))).digest("hex");
   return { preview, plan: { source, target, notes, token: native.token, fields, templates, preserved, removed } };
-}
-
-function orderedJson(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(orderedJson);
-  if (value !== null && typeof value === "object") {
-    return Object.fromEntries(Object.entries(value).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)
-      .map(([key, item]) => [key, orderedJson(item)]));
-  }
-  return value;
 }

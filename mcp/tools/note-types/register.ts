@@ -24,6 +24,7 @@ import {
   deleteNoteTypeTemplate,
   deleteNoteTypeTemplateConfig,
 } from "./delete-note-type-template.js";
+import { deleteUnusedNoteType, deleteUnusedNoteTypeConfig } from "./delete-unused-note-type.js";
 import {
   getNoteTypeDesign,
   getNoteTypeDesignConfig,
@@ -96,6 +97,11 @@ export function registerNoteTypeTools(server: McpServer): void {
     "set-note-type-sort-field",
     setNoteTypeSortFieldConfig,
     withToolErrorHandling(setNoteTypeSortField),
+  );
+  server.registerTool(
+    "delete-unused-note-type",
+    deleteUnusedNoteTypeConfig,
+    withToolErrorHandling(deleteUnusedNoteType),
   );
   server.registerTool(
     "add-note-type-field",
