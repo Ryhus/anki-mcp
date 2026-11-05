@@ -320,6 +320,8 @@ deck ID with `list-decks`. This tool requires `ANKI_API_MODE=v1`.
   selected cards.
 - `get-card-preview` returns Anki-rendered HTML, shared CSS, and restricted
   standalone HTML documents for one existing card, in light or dark mode.
+- `predict-card-intervals` previews native scheduler intervals for Again,
+  Hard, Good, and Easy without answering the card. Requires AnkiConnect v1.
 - `get-card-review-history` returns bounded, newest-first review history.
 - `set-card-suspension` suspends or unsuspends cards.
 - `set-card-flag` safely applies one of Anki's supported flag colors.
@@ -333,6 +335,14 @@ For Card summaries, `isDue` uses Anki's native New or Due search and excludes
 suspended and buried Cards, rather than interpreting legacy review-log intervals.
 Rendered content is requested from Anki only for previews or when explicitly
 requested in Card details.
+
+With `ANKI_API_MODE=v1`, call `predict-card-intervals` with one ID, for example
+`{"cardId":1234567890123}`. The result includes Anki's localized label for
+each answer and an interval in seconds or days, or `null` if Anki does not
+provide a numeric interval. This is a scheduler snapshot, not an exact due
+date, a check that the card can be reviewed now, or the custom state of an
+open Anki reviewer. The tool does not submit answers, change scheduling,
+write review history, or expose Anki's internal answer token.
 
 Low-level scheduling field and ease-factor setters are not exposed to MCP
 clients. A general-purpose answer/reviewer tool is not exposed. However,

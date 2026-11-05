@@ -190,7 +190,10 @@ test("native Card routes render only when requested and use native scheduler com
   f.add("scheduling.setDueDate", { cardIds: ["201"], days: "4" }, items(changed));
   f.add("scheduling.reset", { cardIds: ["201"], restorePosition: true, resetCounts: false, log: true }, items(changed));
   f.add("cards.getMany", { ids: ["201"] }, items(card));
-  f.add("scheduling.predict", { cardId: "201" }, { cardId: "201", stateToken: "token", answers: [{ rating: "again" }] });
+  f.add("scheduling.predict", { cardId: "201" }, {
+    cardId: "201", source: "scheduler", stateToken: "token",
+    answers: [{ rating: "again", label: "10m", interval: { value: 600, unit: "seconds" } }],
+  });
   f.add("scheduling.answer", { cardId: "201", rating: "again", stateToken: "token" }, { cardId: "201" });
   await withAnkiToolContext(true, async () => {
     const [read] = await invokeAnki<Array<Record<string, unknown>>>("cardsInfo", { cards: [201], render: true });

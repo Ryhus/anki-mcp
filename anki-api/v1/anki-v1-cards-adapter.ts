@@ -7,10 +7,10 @@ import {
 } from "./anki-v1-adapter-utils.js";
 import { loadV1NoteInfo } from "./anki-v1-notes-adapter.js";
 import { invalidAnkiV1Response } from "./anki-v1-request.js";
+import { predictV1Card, v1CardRatings } from "./anki-v1-scheduling-client.js";
 
 const type = ["new", "learning", "review", "relearning"] as const;
 const queues = ["buriedByUser", "buriedByScheduler", "suspended", "new", "learning", "review", "dayLearning", "preview"] as const;
-const rating = ["again", "hard", "good", "easy"] as const;
 const kind = ["learning", "review", "relearning", "filtered", "manual", "rescheduled"] as const;
 const dueSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("position"), position: z.number().int().nonnegative() }),
@@ -35,7 +35,7 @@ const renderedSchema = z.object({
 const intervalSchema = z.object({ value: z.number().int().nonnegative(), unit: z.enum(["seconds", "days"]) });
 const reviewsPageSchema = z.object({
   items: z.array(z.object({
-    id: v1EntityIdSchema, cardId: v1EntityIdSchema, rating: z.enum(rating).nullable(),
+    id: v1EntityIdSchema, cardId: v1EntityIdSchema, rating: z.enum(v1CardRatings).nullable(),
     interval: intervalSchema, previousInterval: intervalSchema, factor: z.object({ value: z.number().int() }),
     elapsedMs: z.number().int().nonnegative(), kind: z.enum(kind), syncSequence: z.number().int(),
   })),
@@ -136,11 +136,8 @@ export const v1CardRoutes = {
     }
     for (const id of ids) {
       const cardId = String(id);
-      const prediction = await ctx.request("scheduling.predict", { cardId }, z.object({
-        cardId: v1EntityIdSchema, stateToken: z.string().min(1),
-        answers: z.array(z.object({ rating: z.enum(rating) })),
-      }));
-      if (prediction.cardId !== id || !prediction.answers.some((answer) => answer.rating === "again")) {
+      const prediction = await predictV1Card(ctx, id);
+      if (!prediction.answers.some((answer) => answer.rating === "again")) {
         throw invalidAnkiV1Response("scheduling.predict");
       }
       const ack = await ctx.request("scheduling.answer", { cardId, rating: "again", stateToken: prediction.stateToken },
@@ -163,7 +160,7 @@ export const v1CardRoutes = {
       if (target === undefined || seen.has(review.id)) throw invalidAnkiV1Response("reviews.list");
       seen.add(review.id);
       target.push({
-        id: review.id, usn: review.syncSequence, ease: review.rating === null ? 0 : rating.indexOf(review.rating) + 1,
+        id: review.id, usn: review.syncSequence, ease: review.rating === null ? 0 : v1CardRatings.indexOf(review.rating) + 1,
         ivl: signed(review.interval), lastIvl: signed(review.previousInterval), factor: review.factor.value,
         time: review.elapsedMs, type: kind.indexOf(review.kind),
       });

@@ -9,6 +9,7 @@ import {
   getCardReviewHistory,
   getCardReviewHistoryConfig,
 } from "./get-card-review-history.js";
+import { predictCardIntervals, predictCardIntervalsConfig } from "./predict-card-intervals.js";
 import {
   resetCardsToNew,
   resetCardsToNewConfig,
@@ -46,6 +47,11 @@ export function registerCardTools(server: McpServer): void {
     "get-card-preview",
     getCardPreviewConfig,
     withToolErrorHandling(getCardPreview),
+  );
+  server.registerTool(
+    "predict-card-intervals",
+    predictCardIntervalsConfig,
+    withToolErrorHandling(predictCardIntervals),
   );
   server.registerTool(
     "set-card-suspension",
