@@ -1,8 +1,12 @@
 # Anki MCP
 
-Use Anki Desktop from a local MCP client. Search, create, and edit notes;
+Use Anki Desktop from your AI chat app. Search, create, and edit notes;
 manage decks and cards; preview card HTML/CSS; and work with media and
 `.apkg` deck packages.
+
+Your **MCP client** is the app you chat with, not Anki Desktop. It needs to
+support launching local MCP servers (also called **stdio** servers). It starts
+Anki MCP so your assistant can use the Anki tools.
 
 ## Quick start
 
@@ -11,9 +15,8 @@ manage decks and cards; preview card HTML/CSS; and work with media and
    [AnkiConnect](https://ankiweb.net/shared/info/2055492159) via
    **Tools → Add-ons → Get Add-ons** with code `2055492159`.
    Restart Anki and keep it open.
-3. Add the following **local stdio server** to your MCP client. This example
-   works once `@ryhus/anki-mcp@0.1.0` is published on npm; no clone or global
-   install is needed.
+3. Add the server configuration below in your MCP client's settings.
+   No clone or global install is needed.
 
 ```json
 {
