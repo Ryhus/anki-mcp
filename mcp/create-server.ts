@@ -1,5 +1,6 @@
 import { McpServer } from "@modelcontextprotocol/server";
 import { registerCardTools } from "./tools/cards/index.js";
+import { registerCollectionTools } from "./tools/collection/register.js";
 import { registerDeckTools } from "./tools/decks/index.js";
 import { registerMediaTools } from "./tools/media/index.js";
 import { registerNoteTypeTools } from "./tools/note-types/index.js";
@@ -21,6 +22,7 @@ export function createServer(): McpServer {
   registerMediaTools(server);
   registerStatisticsTools(server);
   registerPackageTools(server);
+  registerCollectionTools(server);
 
   return server;
 }

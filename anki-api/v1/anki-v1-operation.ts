@@ -1,6 +1,6 @@
 import { setTimeout as delay } from "node:timers/promises";
 import { z } from "zod";
-import { resolveAnkiRequestConfig } from "../anki-request-config.js";
+import { resolveAnkiRequestConfig, type AnkiRequestOptions } from "../anki-request-config.js";
 import { AnkiRequestError } from "../anki-request-error.js";
 import type { V1AdapterContext } from "./anki-v1-adapter-utils.js";
 import { AnkiV1Error, ankiV1ErrorSchema, callAnkiV1, invalidAnkiV1Response } from "./anki-v1-request.js";
@@ -19,6 +19,15 @@ export async function acceptV1Operation(ctx: V1AdapterContext, method: string, p
   return handle.operationId;
 }
 
+/** Reads by operation ID, correlated with its original session even after a full sync changes the active one. */
+export async function readV1Operation(method: string, operationId: string, session: string, options: AnkiRequestOptions = {}) {
+  const operation = await callAnkiV1("operations.get", { operationId }, operationSchema, options);
+  if (operation.operationId !== operationId || operation.method !== method || operation.session !== session) {
+    throw invalidAnkiV1Response("operations.get");
+  }
+  return operation;
+}
+
 /** Polls the accepted operation without ever replaying or cancelling the write. */
 export async function waitForV1Operation<T>(
   ctx: V1AdapterContext, method: string, operationId: string, schema: z.ZodType<T>,
@@ -33,12 +42,9 @@ export async function waitForV1Operation<T>(
         method, "Stopped waiting for the accepted operation; it may still complete.", true, { timeoutMs },
       );
     }
-    const operation = await callAnkiV1("operations.get", { operationId }, operationSchema, {
+    const operation = await readV1Operation(method, operationId, ctx.session, {
       ...ctx.options, timeoutMs: remaining,
     });
-    if (operation.operationId !== operationId || operation.method !== method || operation.session !== ctx.session) {
-      throw invalidAnkiV1Response("operations.get");
-    }
     switch (operation.state) {
       case "succeeded": {
         const result = schema.safeParse(operation.result);

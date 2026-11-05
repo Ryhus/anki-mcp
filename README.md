@@ -276,6 +276,7 @@ and [stdio serving guide](https://ts.sdk.modelcontextprotocol.io/v2/serving/stdi
 │   ├── stdio.ts              # Protocol compatibility, input limit, and stdio hosting
 │   ├── tools/
 │   │   ├── cards/            # Card tool contracts and handlers
+│   │   ├── collection/       # Collection information, maintenance, and operation status
 │   │   ├── decks/            # Deck tool contracts and handlers
 │   │   ├── media/            # Media storage, inspection, and reference tools
 │   │   ├── notes/            # Note tool contracts and handlers
@@ -296,6 +297,43 @@ The server currently exposes tools for:
 - creating, finding, updating, tagging, and deleting notes;
 - storing, inspecting, attaching, detaching, and deleting media;
 - inspecting, cloning, and redesigning note types.
+
+### Collection tools (v1)
+
+- `get-collection-info` reads the active profile, scheduler (`sm2` or
+  `fsrs`), and opaque collection session. It does not export notes or cards.
+- `refresh-collection` refreshes open Anki windows. The default `target`
+  is `windows`; `cachesAndWindows` also invalidates AnkiConnect's supported
+  Note Type cache. This does not reopen, sync, or repair the database.
+- `sync-collection` uses the sync server configured in Anki. `includeMedia`
+  defaults to `true`, but media sync must also be enabled in the profile.
+  A full sync may require a decision in Anki's window. MCP never chooses
+  the direction or starts a second sync while tracking the first one.
+- `check-collection-integrity` runs native **Tools → Check Database** and
+  reports Anki's result. The operation can repair data and clears Undo
+  history; the tool does not create a backup.
+- `undo-collection-action` undoes the currently undoable Anki action. The
+  API does not let MCP inspect or select that entry in advance. Do not edit
+  or study between preview and confirmation. Undo may revert a manual action,
+  so never use this tool as automatic rollback of an MCP call.
+- `get-collection-operation` reports the status and eventual result of a
+  submitted sync, integrity check, or Undo. It never starts another operation.
+
+Sync, integrity checks, and Undo default to `dryRun: true`. The preview
+identifies the profile and request but does not contact the sync server,
+check the database, or predict what Undo will revert. To apply, have the user
+review the preview, then send the same options with `dryRun: false`,
+`confirm: true`, and the returned `confirmationToken`. The token expires in
+120 seconds, is tied to the collection session and proposal, and is consumed
+before submission. It is not authentication or proof of human approval.
+
+A submitted request returns an `operationId`, not a success result. Pass
+the ID to `get-collection-operation` on the same running MCP server. For
+`waitingForUser`, respond in the Anki desktop window and check the same ID
+again. Check for terminal status before starting another collection operation.
+Full sync can change the active session, but status still follows the
+original operation. If a submission's acknowledgement is lost, MCP does
+not retry; inspect Anki and restart MCP before starting another operation.
 
 ### Study statistics
 

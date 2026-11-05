@@ -3,7 +3,12 @@ import { z } from "zod";
 import type { AnkiRequestOptions } from "../anki-request-config.js";
 import { callAnkiV1 } from "./anki-v1-request.js";
 
-const collectionSchema = z.object({ session: z.string().min(1), profile: z.string().min(1).optional() });
+export const collectionSchedulerSchema = z.enum(["sm2", "fsrs"]);
+const collectionSchema = z.object({
+  session: z.string().min(1),
+  profile: z.string().min(1).optional(),
+  scheduler: collectionSchedulerSchema.optional(),
+});
 type Collection = z.infer<typeof collectionSchema>;
 const toolContext = new AsyncLocalStorage<{ pin: boolean; collection?: Promise<Collection> }>();
 
