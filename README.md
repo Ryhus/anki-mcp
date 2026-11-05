@@ -769,6 +769,8 @@ applied.
   field hashes before writing any note, and verifies saved values after applying.
 - `edit-note-tags` adds and removes selected tags without replacing unrelated
   tags.
+- `replace-note-tag` previews and replaces one whole tag on explicitly
+  selected Notes, preserving unrelated tags. Requires AnkiConnect v1.
 - `convert-notes-to-note-type` previews and applies native conversion of
   explicit Notes to another Normal Note Type without duplicating them.
 - `list-tags` returns a filtered, paginated view of collection tags.
@@ -794,6 +796,27 @@ cursor. Use `pagination: "offset"` for an exact total, or supply an explicit
 V1 offset mode walks the native search pages to count the matches; this can
 be slower than a single cursor page and does not call legacy. Legacy mode
 defaults to offset and does not support native cursors.
+
+#### Replacing a tag on selected Notes (v1)
+
+Pass up to 100 explicit Note IDs (for example, from `search-notes`):
+
+```json
+{"noteIds":[1234567890123],"from":"inbox","to":"reviewed"}
+```
+
+The default dry run shows affected Notes, Notes already carrying the target
+tag among those affected, and Notes skipped because the source is absent.
+Matching is case-insensitive for the full tag name; replacing `inbox` does
+not replace `inbox::later`. The tool does not accept a collection-wide
+selector or a case-only rename. Anki can preserve registered tag casing.
+
+Apply with `dryRun: false`, `confirmReplacement: true`, and the reviewed
+`expectedImpactHash`. Any missing Note or change to the selected Notes'
+tags invalidates the preview. The tool sends only the affected IDs to Anki,
+then checks the replacement and the unrelated tags on those Notes. Preview
+and write are not atomic. There is no automatic retry or rollback; inspect
+Anki before retrying if the result could not be verified.
 
 #### Finding empty Notes (v1)
 

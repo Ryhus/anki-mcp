@@ -13,6 +13,7 @@ import {
   getNoteDetailsConfig,
 } from "./get-note-details.js";
 import { listTags, listTagsConfig } from "./list-tags.js";
+import { replaceNoteTag, replaceNoteTagConfig } from "./replace-note-tag.js";
 import { searchNotes, searchNotesConfig } from "./search-notes.js";
 import {
   updateNoteFields,
@@ -57,6 +58,7 @@ export function registerNoteTools(server: McpServer): void {
     editNoteTagsConfig,
     withToolErrorHandling(editNoteTags),
   );
+  server.registerTool("replace-note-tag", replaceNoteTagConfig, withToolErrorHandling(replaceNoteTag));
   server.registerTool(
     "list-tags",
     listTagsConfig,

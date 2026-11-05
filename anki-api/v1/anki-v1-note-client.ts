@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { AnkiRequestOptions } from "../anki-request-config.js";
 import type { AnkiNoteFieldUpdate } from "../notes/note-types.js";
+import { stringIds, type V1AdapterContext } from "./anki-v1-adapter-utils.js";
 import { v1EntityIdSchema, v1EntitySummarySchema } from "./anki-v1-collection-client.js";
 import {
   AnkiV1Error,
@@ -55,4 +56,13 @@ export async function updateV1NoteFields(note: AnkiNoteFieldUpdate, session: str
     id: String(note.id), patch: { fields: note.fields }, session,
   }, noteSchema, options);
   if (updated.id !== note.id) throw invalidAnkiV1Response(method);
+}
+
+/** Replaces a single tag only on the explicitly reviewed Notes. */
+export async function replaceV1NoteTag(ctx: V1AdapterContext, noteIds: readonly number[], from: string, to: string): Promise<void> {
+  if (noteIds.length === 0) return;
+  const method = "tags.replace";
+  const { changedCount } = await ctx.request(method, { noteIds: stringIds(noteIds), from, to },
+    z.object({ changedCount: z.number().int().nonnegative() }));
+  if (changedCount !== noteIds.length) throw invalidAnkiV1Response(method);
 }
