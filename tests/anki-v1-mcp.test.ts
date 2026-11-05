@@ -34,17 +34,20 @@ for (const version of ["2025-11-25", "2026-07-28"] as const) {
             fields: { Front: { value: "<b>Cat</b>", order: 0 } },
           }], error: null });
         }
-        if (action === "createDeck") return Response.json({ result: 2, error: null });
         assert.fail(`Unexpected legacy action: ${action}`);
       }
       assert.equal(new URL(url).pathname, "/api/v1");
       const success = (result: unknown) => Response.json({ jsonrpc: "2.0", id, result });
       switch (method) {
         case "decks.list": return success([{ name: "Default", id: "1" }]);
+        case "decks.create":
+          assert.deepEqual(params, { name: "Fixture", session: "test-session" });
+          return success({ name: "Fixture", id: "2", kind: "normal" });
         case "noteTypes.list": return success([{ name: "Basic", id: "100" }]);
         case "tags.list": return success(["noun"]);
         case "collection.get": return success({ session: "test-session" });
         case "notes.search":
+          if (params.limit === 1_000) return success({ ids: ["1", "2", "3"], nextCursor: null });
           assert.deepEqual(params, {
             query: "", limit: 2, session: "test-session",
             ...(params.cursor === undefined ? {} : { cursor: "next-page" }),
@@ -56,14 +59,39 @@ for (const version of ["2025-11-25", "2026-07-28"] as const) {
           }
           return Response.json({ jsonrpc: "2.0", id, error: { code: 1014, message: "expired" } });
         case "notes.getMany":
-          assert.deepEqual(params, { ids: ["1", "2"], session: "test-session" });
+          assert.equal(params.session, "test-session");
+          assert.deepEqual(params.ids, (params.ids as string[]).length === 1 ? ["1"] : ["1", "2"]);
           return success({ items: [
             { index: 0, result: {
               id: "1", noteType: { id: "100", name: "Basic" }, tags: ["noun"],
               cardIds: ["101"], modifiedAt: "2023-11-14T22:13:20Z", fields: { Front: "<b>Cat</b>" },
             } },
-            { index: 1, error: { code: 1001, message: "not found" } },
+            ...((params.ids as string[]).length === 1 ? [] : [{ index: 1, error: { code: 1001, message: "not found" } }]),
           ] });
+        case "noteTypes.get":
+          assert.deepEqual(params, { noteType: { name: "Basic" }, session: "test-session" });
+          return success({
+            id: "100", name: "Basic", css: "", fields: [{ name: "Front" }],
+            templates: [{ name: "Card 1", questionHtml: "{{Front}}", answerHtml: "{{FrontSide}}" }],
+          });
+        case "cards.search":
+          assert.equal(params.session, "test-session");
+          if (params.query === "") {
+            assert.equal(params.limit, 2);
+            return success(params.cursor === undefined ? { ids: ["101"], nextCursor: "card-page" } : { ids: [], nextCursor: null });
+          }
+          assert.equal(params.query, "cid:101 (is:new or is:due) -is:suspended -is:buried");
+          return success({ ids: ["101"], nextCursor: null });
+        case "cards.getMany":
+          assert.deepEqual(params, { ids: ["101"], session: "test-session" });
+          return success({ items: [{ index: 0, result: {
+            id: "101", noteId: "1", deck: { id: "1", name: "Default" }, homeDeck: null,
+            templateIndex: 0, flags: 0, modifiedAt: "2023-11-14T22:13:20Z",
+            scheduling: {
+              type: "new", queue: "new", due: { kind: "position", position: 0 },
+              intervalDays: 0, remainingSteps: 0, repetitions: 0, lapses: 0, sm2EasePermille: 0,
+            },
+          } }] });
         default: assert.fail(`Unexpected v1 method: ${method}`);
       }
     });
@@ -114,11 +142,28 @@ for (const version of ["2025-11-25", "2026-07-28"] as const) {
       assert.deepEqual(offset.structuredContent, {
         query: "", total: 3, offset: 0, returned: 1, hasMore: true, notes: [note], missingNoteIds: [],
       });
-      assert.deepEqual(calls.slice(-2), ["findNotes", "notesInfo"]);
+      assert.deepEqual(calls.slice(-4), ["collection.get", "notes.search", "notes.getMany", "noteTypes.get"]);
     }
+    const cardPage = await client.callTool({ name: "search-cards", arguments: input });
+    assert.notEqual(cardPage.isError, true);
+    assert.deepEqual(cardPage.structuredContent, {
+      query: "", total: null, offset: null, returned: 1, hasMore: true, nextCursor: "card-page",
+      cards: [{
+        cardId: 101, noteId: 1, deckName: "Default", modelName: "Basic", templateOrdinal: 0,
+        state: "new", isDue: true, isSuspended: false, interval: { value: 0, unit: "days" },
+        easePercent: null, repetitions: 0, lapses: 0, flag: "none",
+      }],
+      missingCardIds: [],
+    });
+    assert.deepEqual(calls.slice(-6), ["collection.get", "cards.search", "cards.getMany", "notes.getMany", "noteTypes.get", "cards.search"]);
+    const lastCards = await client.callTool({ name: "search-cards", arguments: { ...input, cursor: "card-page" } });
+    assert.deepEqual(lastCards.structuredContent, {
+      query: "", total: null, offset: null, returned: 0, hasMore: false, nextCursor: null,
+      cards: [], missingCardIds: [],
+    });
     const created = await client.callTool({ name: "create-deck", arguments: { name: "Fixture" } });
     assert.deepEqual(created.structuredContent, { deck: { id: 2, name: "Fixture" }, created: true });
-    assert.deepEqual(calls.slice(-2), ["decks.list", "createDeck"]);
+    assert.deepEqual(calls.slice(-3), ["collection.get", "decks.list", "decks.create"]);
 
     const beforeInvalid = calls.length;
     const conflict = await client.callTool({ name: "search-notes", arguments: { ...input, pagination: "cursor", offset: 1 } });

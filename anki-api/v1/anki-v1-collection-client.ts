@@ -1,5 +1,7 @@
 import { z } from "zod";
 import { callAnkiV1, invalidAnkiV1Response } from "./anki-v1-request.js";
+import { getV1Collection, getV1WorkflowSession } from "./anki-v1-context.js";
+import type { AnkiRequestOptions } from "../anki-request-config.js";
 
 // Preserve numeric MCP IDs without ever rounding an upstream decimal string.
 export const v1EntityIdSchema = z.string()
@@ -24,8 +26,9 @@ const noteTypeDesignSchema = v1EntitySummarySchema.extend({
 });
 
 /** Normalizes v1 list records to the existing name-to-ID client contract. */
-export async function getV1NameMap(method: "decks.list" | "noteTypes.list", session?: string): Promise<Record<string, number>> {
-  const entries = await callAnkiV1(method, session === undefined ? {} : { session }, entityListSchema);
+export async function getV1NameMap(method: "decks.list" | "noteTypes.list", session?: string, options?: AnkiRequestOptions): Promise<Record<string, number>> {
+  const pinned = session ?? await getV1WorkflowSession();
+  const entries = await callAnkiV1(method, pinned === undefined ? {} : { session: pinned }, entityListSchema, options);
   if (new Set(entries.map(({ name }) => name)).size !== entries.length ||
     new Set(entries.map(({ id }) => id)).size !== entries.length) {
     throw invalidAnkiV1Response(method);
@@ -39,16 +42,17 @@ export function getV1Tags(): Promise<string[]> {
 
 /** Capture an Anki collection session so related requests cannot cross profiles. */
 export async function getV1CollectionSession(): Promise<string> {
-  const { session } = await callAnkiV1("collection.get", {}, z.object({ session: z.string().min(1) }));
+  const { session } = await getV1Collection();
   return session;
 }
 
 /** Gets an ordered field/template snapshot and its CSS in a single exchange. */
-export async function getV1NoteTypeDesign(modelName: string, session?: string) {
+export async function getV1NoteTypeDesign(modelName: string, session?: string, options?: AnkiRequestOptions) {
   const method = "noteTypes.get";
+  const pinned = session ?? await getV1WorkflowSession();
   const design = await callAnkiV1(method, {
-    noteType: { name: modelName }, ...(session === undefined ? {} : { session }),
-  }, noteTypeDesignSchema);
+    noteType: { name: modelName }, ...(pinned === undefined ? {} : { session: pinned }),
+  }, noteTypeDesignSchema, options);
   if (design.name !== modelName ||
     new Set(design.fields.map(({ name }) => name)).size !== design.fields.length ||
     new Set(design.templates.map(({ name }) => name)).size !== design.templates.length) {

@@ -19,11 +19,11 @@ export const getCardPreviewConfig = {
   annotations: READ_ONLY_TOOL_ANNOTATIONS,
 };
 
-/** Reads only cardsInfo; does not open the reviewer or change scheduling. */
+/** Reads rendered HTML; does not open the reviewer or change scheduling. */
 export async function getCardPreview({
   cardId, side, theme,
 }: CardPreviewInput): Promise<CallToolResult> {
-  const { cards } = await loadCardInfo([cardId]);
+  const { cards } = await loadCardInfo([cardId], true);
   const card = cards[0];
   if (card === undefined) {
     return createToolResult(`Card ${cardId} was not found.`, {

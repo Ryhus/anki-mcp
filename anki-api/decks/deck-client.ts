@@ -1,6 +1,7 @@
 import { invokeAnki } from "../anki-request.js";
 import { useAnkiV1 } from "../anki-api-mode.js";
 import { getV1NameMap } from "../v1/anki-v1-collection-client.js";
+import { AnkiV1Error } from "../v1/anki-v1-request.js";
 import { findAnkiCards } from "../cards/card-client.js";
 import type {
   AnkiDeckStatsMap,
@@ -63,8 +64,8 @@ export async function getAnkiDeckStats(
 }
 
 function areDeckCountsUnavailable(error: unknown): boolean {
-  return error instanceof Error &&
-    error.message === 'AnkiConnect action "getDeckStats" failed: Deck counts unavailable.';
+  return (error instanceof AnkiV1Error && error.method === "decks.getCounts" && error.code === 1001) ||
+    (error instanceof Error && error.message === 'AnkiConnect action "getDeckStats" failed: Deck counts unavailable.');
 }
 
 export function getCardsByDeck(cardIds: CardId[]): Promise<CardsByDeckName> {

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { AnkiRequestOptions } from "../anki-request-config.js";
 import type { AnkiNoteFieldUpdate } from "../notes/note-types.js";
 import { v1EntityIdSchema, v1EntitySummarySchema } from "./anki-v1-collection-client.js";
 import {
@@ -24,13 +25,13 @@ const noteBatchSchema = z.object({
 });
 
 /** Loads notes in input order, distinguishing missing notes from other failures. */
-export async function getV1Notes(ids: readonly number[], session: string) {
+export async function getV1Notes(ids: readonly number[], session: string, options?: AnkiRequestOptions) {
   const notes: z.infer<typeof noteSchema>[] = [];
   const missingNoteIds: number[] = [];
   if (ids.length === 0) return { notes, missingNoteIds };
 
   const method = "notes.getMany";
-  const { items } = await callAnkiV1(method, { ids: ids.map(String), session }, noteBatchSchema);
+  const { items } = await callAnkiV1(method, { ids: ids.map(String), session }, noteBatchSchema, options);
   if (items.length !== ids.length) throw invalidAnkiV1Response(method);
   for (const [index, item] of items.entries()) {
     const id = ids[index]!;
@@ -47,10 +48,10 @@ export async function getV1Notes(ids: readonly number[], session: string) {
 }
 
 /** Updates only the supplied fields and validates the acknowledgement's identity. */
-export async function updateV1NoteFields(note: AnkiNoteFieldUpdate, session: string): Promise<void> {
+export async function updateV1NoteFields(note: AnkiNoteFieldUpdate, session: string, options?: AnkiRequestOptions): Promise<void> {
   const method = "notes.update";
   const updated = await callAnkiV1(method, {
     id: String(note.id), patch: { fields: note.fields }, session,
-  }, noteSchema);
+  }, noteSchema, options);
   if (updated.id !== note.id) throw invalidAnkiV1Response(method);
 }

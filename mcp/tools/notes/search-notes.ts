@@ -1,11 +1,10 @@
 import type { CallToolResult } from "@modelcontextprotocol/server";
 import { z } from "zod";
-import { useAnkiV1 } from "../../../anki-api/anki-api-mode.js";
-import { AnkiRequestError } from "../../../anki-api/anki-request-error.js";
 import { findAnkiNotes } from "../../../anki-api/notes/note-client.js";
 import { getV1NoteSearchPage } from "../../../anki-api/v1/anki-v1-note-search.js";
 import { READ_ONLY_TOOL_ANNOTATIONS } from "../../utils/tool-annotations.js";
 import { createToolResult } from "../../utils/tool-result.js";
+import { resolveSearchPagination, searchPaginationShape, validateSearchPagination } from "../../utils/search-pagination.js";
 import { loadNotes } from "./note-loader.js";
 import { toNoteFieldPreviews, toNoteSummary } from "./note-normalizers.js";
 import {
@@ -21,26 +20,14 @@ const searchNotesInputSchema = z.object({
     .describe(
       'Native Anki search query, for example "deck:German tag:A1", "note:Basic", or "Front:*Hund*". An empty query searches all notes.',
     ),
-  pagination: z.enum(["offset", "cursor"]).optional()
-    .describe("Defaults to cursor when v1 is enabled and no offset is supplied. Use offset when an exact total or numeric position is needed."),
-  cursor: z.string().min(1).max(4_096).optional()
-    .describe("Use the previous nextCursor with the same query and limit. Omit it on the first cursor page."),
-  offset: z.number().int().nonnegative().optional()
-    .describe("Numeric position in offset mode. Supplying an offset, even 0, selects offset mode unless pagination is explicit."),
+  ...searchPaginationShape,
   limit: z
     .number()
     .int()
     .min(1)
     .max(NOTE_SEARCH_LIMIT)
     .default(20),
-}).superRefine(({ pagination, cursor, offset }, context) => {
-  if (cursor !== undefined && (pagination === "offset" || (pagination === undefined && offset !== undefined))) {
-    context.addIssue({ code: "custom", path: ["cursor"], message: "Cannot combine a continuation cursor with offset pagination" });
-  }
-  if (pagination === "cursor" && (offset ?? 0) !== 0) {
-    context.addIssue({ code: "custom", path: ["offset"], message: "Cursor pagination does not accept a nonzero offset" });
-  }
-});
+}).superRefine(validateSearchPagination);
 
 type SearchNotesInput = z.infer<typeof searchNotesInputSchema>;
 
@@ -70,14 +57,8 @@ export async function searchNotes({
   offset: requestedOffset,
   limit,
 }: SearchNotesInput): Promise<CallToolResult> {
-  const v1 = useAnkiV1("notes.search");
-  const mode = pagination ?? (cursor !== undefined || (v1 && requestedOffset === undefined) ? "cursor" : "offset");
+  const mode = resolveSearchPagination({ pagination, cursor, offset: requestedOffset }, "notes.search");
   if (mode === "cursor") {
-    if (!v1) {
-      throw new AnkiRequestError(
-        "configuration", "notes.search", "Cursor pagination requires ANKI_API_MODE=v1.", false,
-      );
-    }
     const { notes: page, missingNoteIds, nextCursor } = await getV1NoteSearchPage(query, limit, cursor);
     const notes = page.map((note) => ({
       noteId: note.id,

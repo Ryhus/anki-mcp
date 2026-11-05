@@ -32,7 +32,7 @@ Create a `.env` file in the repository root:
 ```dotenv
 ANKI_URL=http://127.0.0.1:8765
 
-# Optional: use API v1 for migrated operations (default: legacy).
+# Optional: use AnkiConnect API v1 for all tools (default: legacy).
 # ANKI_API_MODE=v1
 
 # Optional: queue wait + full AnkiConnect HTTP request deadline (milliseconds)
@@ -47,24 +47,21 @@ without embedded URL credentials. API redirects are not followed. The example
 uses its usual local address; change it if your AnkiConnect instance uses a
 different host or port.
 
-`ANKI_API_MODE=v1` opts into the available stages of the
-[AnkiConnect API v1 migration](https://git.sr.ht/~foosoft/anki-connect/blob/master/API_V1.md).
+`ANKI_API_MODE=v1` runs all tools through
+[AnkiConnect API v1](https://git.sr.ht/~foosoft/anki-connect/blob/master/API_V1.md).
 Keep `ANKI_URL` at the base endpoint, without `/api/v1`; the server appends
-that path for JSON-RPC calls. Both endpoints must be accessible on the same
-AnkiConnect installation. Set the variable in the MCP client's environment
-or in `.env`, then restart the MCP server. Without it, the default
-`legacy` mode continues to use version 6.
+that path for JSON-RPC calls. Set the variable in the MCP client's
+environment or in `.env`, then restart the MCP server. The root legacy
+endpoint is not needed in v1 mode. Without the variable, the default
+`legacy` mode continues to use version 6 for older add-ons.
 
-In v1 mode, deck, note-type and tag listing use v1. Note-type design reads
-(including design verification) retrieve ordered fields, templates and CSS
-in one request. `search-notes` defaults to native cursor pages.
-`validate-note-drafts`, `create-notes`, and `update-note-fields` use v1
-with one collection session per invocation. Other workflows still use legacy
-actions for steps that have not been migrated. MCP tool names and numeric IDs
+In v1 mode, multi-step tools pin native requests to one collection session
+per invocation. Session checks stop subsequent steps after a profile switch;
+they do not roll back a previously completed step. A v1 failure never
+triggers a legacy fallback or a write retry. MCP tool names and numeric IDs
 are unchanged; out-of-range upstream IDs are rejected rather than rounded.
-The two APIs share the same request limiter and timeout. A v1 failure does
-not trigger a fallback or retry. If the installed add-on does not serve
-v1, upgrade AnkiConnect or set the mode back to `legacy`.
+Both modes share the same request limiter and timeout. If the installed
+add-on does not serve v1, upgrade AnkiConnect or select `legacy` explicitly.
 
 `ANKI_REQUEST_TIMEOUT_MS` is optional and defaults to **30,000 ms (30 seconds)**.
 It must be an integer from 1 to 300,000 ms; `0` does not disable the deadline.
@@ -73,14 +70,16 @@ headers, and loading the JSON response body. It is not restarted when a slot
 becomes available. As with other JavaScript timers, it cannot interrupt
 synchronous CPU work while the event loop is blocked. Each AnkiConnect HTTP
 request gets its own deadline: a tool that makes several requests can take longer overall. A
-`multi` batch shares one HTTP deadline and is not an atomic transaction. Set the
+`multi` batch in legacy mode shares one HTTP deadline. In v1 mode, internal
+read groups run as separate native requests in one session. Neither is a
+transaction. Set the
 MCP client's tool timeout accordingly; the client may stop waiting sooner.
 This setting does not change the separate timeout for public HTTPS media downloads.
 
 All AnkiConnect HTTP calls in one Node.js process share a **four-request
 concurrency limit**, including calls from different tools or server factories.
-Excess requests wait in FIFO order; a `multi` batch uses one slot for its
-entire HTTP exchange. A slot remains held through body loading, then is
+Excess requests wait in FIFO order; a legacy `multi` batch uses one slot for
+its entire HTTP exchange. A slot remains held through body loading, then is
 returned on completion/failure or explicit transport abort. Timed-out and
 cancelled waiters are removed and never sent later. No extra tool parameters
 or dependencies are required, and the limit is fixed in this release.
@@ -303,6 +302,12 @@ The server currently exposes tools for:
 - `reset-cards-to-new` resets card scheduling progress.
 - `start-card-relearning` starts relearning for active Review cards and reports
   which entered Relearning, returned directly to Review, or were suspended.
+
+With v1, `search-cards` uses the same [cursor options as Note search](#note-tools).
+For Card summaries, `isDue` uses Anki's native New or Due search and excludes
+suspended and buried Cards, rather than interpreting legacy review-log intervals.
+Rendered content is requested from Anki only for previews or when explicitly
+requested in Card details.
 
 Low-level scheduling field and ease-factor setters are not exposed to MCP
 clients. A general-purpose answer/reviewer tool is not exposed. However,
@@ -673,7 +678,9 @@ read uses the same Anki collection session. Start a new search if a cursor
 expires, the profile changes, or a continuation fails after consuming its
 cursor. Use `pagination: "offset"` for an exact total, or supply an explicit
 `offset` (including 0) to select offset mode when pagination is omitted.
-Legacy mode defaults to offset and does not support native cursors.
+V1 offset mode walks the native search pages to count the matches; this can
+be slower than a single cursor page and does not call legacy. Legacy mode
+defaults to offset and does not support native cursors.
 
 #### Note creation outcomes
 
@@ -785,7 +792,8 @@ With `ANKI_API_MODE=v1`, this tool passes the same collection session to
 profile changes during a tool call, a stale-session error stops the
 remaining steps without falling back to a legacy write. A preview and a
 later apply are separate calls: the apply still checks the field hashes
-against current values. Media attachment and detachment are unchanged.
+against current values. Media attachment and detachment also use v1 when
+enabled, with their own preflight and readback checks.
 
 The preflight check and subsequent writes are separate AnkiConnect calls, not
 an atomic transaction. A concurrent edit in that interval remains possible.
@@ -887,6 +895,12 @@ retrying; never interpret an error as proof that nothing was deleted.
 - `delete-media-file` performs a complete impact scan and requires the reviewed
   file hash, reference count, reference fingerprint, and explicit confirmation
   before moving a file to Anki's media trash.
+
+In v1 mode, the server submits `media.store` once and polls its operation
+status before verifying the stored bytes. The polling phase is bounded by
+the configured request timeout. A lost status or timeout does not cancel
+the accepted write; inspect Anki before retrying. Collision rejection uses
+Anki's native error policy as well as the preflight check.
 
 Media mutations that change note fields default to `dryRun: true`. The dry run
 returns a SHA-256 hash of the complete current field value; pass it back as

@@ -106,7 +106,7 @@ export async function storeMediaFile({
     filename,
     data: loadedSource.bytes.toString("base64"),
     deleteExisting: false,
-  });
+  }, collisionPolicy === "reject");
 
   if (storedFilename === null) {
     throw new Error("AnkiConnect skipped the media file unexpectedly");

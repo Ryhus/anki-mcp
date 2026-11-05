@@ -20,7 +20,7 @@ export function registerDeckTools(server: McpServer): void {
   server.registerTool(
     "list-decks",
     listDecksConfig,
-    withToolErrorHandling(listDecks),
+    withToolErrorHandling(listDecks, false),
   );
   server.registerTool(
     "create-deck",

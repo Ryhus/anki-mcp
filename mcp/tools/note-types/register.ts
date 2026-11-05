@@ -63,7 +63,7 @@ export function registerNoteTypeTools(server: McpServer): void {
   server.registerTool(
     "list-note-types",
     listNoteTypesConfig,
-    withToolErrorHandling(listNoteTypes),
+    withToolErrorHandling(listNoteTypes, false),
   );
   server.registerTool(
     "get-note-type-schema",
@@ -73,7 +73,7 @@ export function registerNoteTypeTools(server: McpServer): void {
   server.registerTool(
     "get-note-type-design",
     getNoteTypeDesignConfig,
-    withToolErrorHandling(getNoteTypeDesign),
+    withToolErrorHandling(getNoteTypeDesign, false),
   );
   server.registerTool(
     "clone-note-type",

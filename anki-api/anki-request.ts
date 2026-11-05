@@ -4,6 +4,8 @@ import {
   type AnkiRequestOptions,
 } from "./anki-request-config.js";
 import { AnkiRequestError } from "./anki-request-error.js";
+import { useAnkiV1 } from "./anki-api-mode.js";
+import { invokeV1Action } from "./v1/anki-v1-adapter.js";
 
 export { AnkiRequestError } from "./anki-request-error.js";
 export type { AnkiRequestErrorKind } from "./anki-request-error.js";
@@ -59,7 +61,7 @@ function isAnkiResponse(value: unknown): value is AnkiResponse {
   );
 }
 
-/** Sends one bounded request and validates the AnkiConnect response envelope. */
+/** Sends one explicitly legacy request and validates its response envelope. */
 export async function callAnki<TResult = unknown>(
   action: string,
   params?: AnkiRequestParams,
@@ -97,6 +99,7 @@ export async function invokeAnki<TResult = unknown>(
   params?: AnkiRequestParams,
   options: AnkiRequestOptions = {},
 ): Promise<TResult> {
+  if (useAnkiV1(action)) return await invokeV1Action(action, params, options) as TResult;
   const { result, error } = await callAnki<TResult>(action, params, options);
 
   if (error !== null) {

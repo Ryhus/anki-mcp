@@ -1,4 +1,5 @@
 import { invokeAnki } from "../anki-request.js";
+import { useAnkiV1 } from "../anki-api-mode.js";
 import type {
   AnkiRetrievedMediaData,
   AnkiStoredMediaFilename,
@@ -10,11 +11,12 @@ export function storeAnkiMediaFile({
   filename,
   data,
   deleteExisting,
-}: AnkiStoreMediaFileInput): Promise<AnkiStoredMediaFilename> {
+}: AnkiStoreMediaFileInput, rejectIfExists = false): Promise<AnkiStoredMediaFilename> {
   return invokeAnki<AnkiStoredMediaFilename>("storeMediaFile", {
     filename,
     data,
     deleteExisting,
+    ...(useAnkiV1("storeMediaFile") ? { rejectIfExists } : {}),
   });
 }
 

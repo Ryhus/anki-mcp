@@ -9,6 +9,7 @@ import type {
   CardId,
 } from "../../../anki-api/cards/card-types.js";
 import { unique } from "./card-utils.js";
+import { useAnkiV1 } from "../../../anki-api/anki-api-mode.js";
 
 export interface LoadedCard {
   info: AnkiCardInfo;
@@ -30,8 +31,8 @@ export interface LoadedCardInfo {
  * Loads and enriches existing cards while reporting IDs that AnkiConnect
  * represents as empty card-info objects.
  */
-export async function loadCards(cardIds: CardId[]): Promise<LoadedCards> {
-  const { cards: cardInfo, missingCardIds } = await loadCardInfo(cardIds);
+export async function loadCards(cardIds: CardId[], render = false): Promise<LoadedCards> {
+  const { cards: cardInfo, missingCardIds } = await loadCardInfo(cardIds, render);
   const existingCardIds = cardInfo.map(({ cardId }) => cardId);
 
   if (existingCardIds.length === 0) {
@@ -39,8 +40,9 @@ export async function loadCards(cardIds: CardId[]): Promise<LoadedCards> {
   }
 
   const dueStatuses = await getAnkiCardsDueStatus(existingCardIds);
-  const suspensionStatuses =
-    await getAnkiCardsSuspensionStatus(existingCardIds);
+  const suspensionStatuses = useAnkiV1("areSuspended")
+    ? cardInfo.map(({ queue }) => queue === -1)
+    : await getAnkiCardsSuspensionStatus(existingCardIds);
 
   if (
     dueStatuses.length !== existingCardIds.length ||
@@ -71,9 +73,10 @@ export async function loadCards(cardIds: CardId[]): Promise<LoadedCards> {
 /** Loads existing card payloads without requesting additional scheduler data. */
 export async function loadCardInfo(
   cardIds: CardId[],
+  render = false,
 ): Promise<LoadedCardInfo> {
   const requestedCardIds = unique(cardIds);
-  const rawCards = await getAnkiCardsInfo(requestedCardIds);
+  const rawCards = await getAnkiCardsInfo(requestedCardIds, render);
   if (!Array.isArray(rawCards)) {
     throw new Error("AnkiConnect returned an invalid cardsInfo result");
   }

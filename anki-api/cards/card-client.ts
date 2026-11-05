@@ -1,4 +1,6 @@
 import { invokeAnki } from "../anki-request.js";
+import { useAnkiV1 } from "../anki-api-mode.js";
+import { openV1Adapter, searchV1IdPage } from "../v1/anki-v1-adapter-utils.js";
 import type {
   AnkiCardInfoResult,
   AnkiCardReviewMap,
@@ -11,6 +13,11 @@ import type { NoteId } from "../notes/note-types.js";
 /** Finds card IDs with Anki's native search syntax. */
 export function findAnkiCards(query: string): Promise<CardId[]> {
   return invokeAnki<CardId[]>("findCards", { query });
+}
+
+/** Reads a single native v1 page, without fetching the entire Card ID set. */
+export async function findAnkiCardPage(query: string, limit: number, cursor?: string) {
+  return searchV1IdPage(await openV1Adapter({}), "cards.search", query, limit, cursor);
 }
 
 /** Resolves the distinct note IDs that own the requested cards. */
@@ -27,8 +34,11 @@ export function getAnkiNoteIdsForCards(
 /** Gets Anki's complete card payload for the requested IDs. */
 export function getAnkiCardsInfo(
   cardIds: CardId[],
+  render = true,
 ): Promise<AnkiCardInfoResult[]> {
-  return invokeAnki<AnkiCardInfoResult[]>("cardsInfo", { cards: cardIds });
+  return invokeAnki<AnkiCardInfoResult[]>("cardsInfo", {
+    cards: cardIds, ...(useAnkiV1("cardsInfo") ? { render } : {}),
+  });
 }
 
 /** Checks whether the requested existing cards are currently due. */

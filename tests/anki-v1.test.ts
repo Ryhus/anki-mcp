@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test, { type TestContext } from "node:test";
 import { z } from "zod";
 import { getDeckNameMap } from "../anki-api/decks/deck-client.js";
-import { invokeAnki } from "../anki-api/anki-request.js";
+import { callAnki } from "../anki-api/anki-request.js";
 import { callAnkiV1 } from "../anki-api/v1/anki-v1-request.js";
 import { getV1NoteSearchPage } from "../anki-api/v1/anki-v1-note-search.js";
 import { ankiRequestLimiter } from "../anki-api/anki-request-limiter.js";
@@ -100,7 +100,7 @@ test("v1 shares the legacy limiter and a queued deadline cannot send JSON-RPC la
   configure(t);
   const response = Promise.withResolvers<Response>();
   const fetch = t.mock.method(globalThis, "fetch", () => response.promise);
-  const legacy = invokeAnki("version");
+  const legacy = callAnki("version");
   const held = Array.from({ length: 3 }, () => ankiRequestLimiter.tryAcquire()!);
   t.after(() => {
     held.forEach((release) => release());
@@ -112,7 +112,7 @@ test("v1 shares the legacy limiter and a queued deadline cannot send JSON-RPC la
   });
   held.forEach((release) => release());
   response.resolve(Response.json({ result: 6, error: null }));
-  assert.equal(await legacy, 6);
+  assert.equal((await legacy).result, 6);
   assert.equal(fetch.mock.callCount(), 1);
 });
 

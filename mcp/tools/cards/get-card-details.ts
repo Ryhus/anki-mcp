@@ -39,7 +39,7 @@ export async function getCardDetails({
   cardIds,
   includeRenderedContent,
 }: GetCardDetailsInput): Promise<CallToolResult> {
-  const { cards: loadedCards, missingCardIds } = await loadCards(cardIds);
+  const { cards: loadedCards, missingCardIds } = await loadCards(cardIds, includeRenderedContent);
   const cards = loadedCards.map((card) =>
     toCardDetails(card, includeRenderedContent),
   );
