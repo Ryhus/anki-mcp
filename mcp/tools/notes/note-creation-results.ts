@@ -6,31 +6,35 @@ import { noteCreationOutputSchema, type NoteCreationResult } from "./note-creati
 export const CREATION_RETRY_WARNING =
   "No automatic retry or rollback was performed. Do not resend the whole batch after a partial or unknown outcome; inspect Anki and the known IDs first. Duplicate checks are not an idempotency guarantee.";
 
-/** Validates positional IDs without inventing associations from a broken reply. */
-export function interpretNoteCreationReply(reply: unknown, inputCount: number) {
+/** Keeps bounded ID evidence without treating it as a valid acknowledgement. */
+export function collectReportedNoteIds(values: Iterable<unknown>) {
   const reportedNoteIds: number[] = [];
   const seen = new Set<number>();
   let reportedNoteIdsTruncated = false;
-  if (Array.isArray(reply)) {
-    for (const value of reply) {
-      if (!isNoteId(value) || seen.has(value)) continue;
-      if (reportedNoteIds.length === NOTE_BATCH_LIMIT) {
-        reportedNoteIdsTruncated = true;
-        break;
-      }
-      seen.add(value);
-      reportedNoteIds.push(value);
+  for (const value of values) {
+    if (!isNoteId(value) || seen.has(value)) continue;
+    if (reportedNoteIds.length === NOTE_BATCH_LIMIT) {
+      reportedNoteIdsTruncated = true;
+      break;
     }
+    seen.add(value);
+    reportedNoteIds.push(value);
   }
+  return { reportedNoteIds, reportedNoteIdsTruncated };
+}
+
+/** Validates positional IDs without inventing associations from a broken reply. */
+export function interpretNoteCreationReply(reply: unknown, inputCount: number) {
+  const evidence = collectReportedNoteIds(Array.isArray(reply) ? reply : []);
   const valid = Array.isArray(reply) && reply.length === inputCount &&
     reply.every((id: unknown) => id === null || isNoteId(id)) &&
-    reply.filter((id: unknown) => id !== null).length === seen.size;
+    reply.filter((id: unknown) => id !== null).length === evidence.reportedNoteIds.length;
   const noteResults: NoteCreationResult[] = valid
     ? reply.map((id: number | null, inputIndex: number): NoteCreationResult => id === null
       ? { inputIndex, status: "not-created", noteId: null, cardIds: null, error: "AnkiConnect did not create this Note after validation." }
       : { inputIndex, status: "created-unverified", noteId: id, cardIds: null, error: "Creation was acknowledged; readback has not been verified." })
     : unsuccessfulNoteResults(inputCount, "unknown", "Malformed or misaligned addNotes reply; input-to-ID associations are unknown.");
-  return { noteResults, reportedNoteIds, reportedNoteIdsTruncated, valid };
+  return { noteResults, ...evidence, valid };
 }
 
 export function unsuccessfulNoteResults(
@@ -69,7 +73,7 @@ export function noteCreationToolResult(
   const summary = outcome === "unknown"
     ? "Creation outcome is unknown; the created Note count is not known. Inspect Anki before resubmitting."
     : outcome === "not-attempted"
-      ? "Created no Notes: addNotes was not sent."
+      ? "Created no Notes: creation was not attempted."
       : `Anki acknowledged creation of ${created.length} of ${noteResults.length} Notes; readback verified ${noteResults.filter(({ status }) => status === "created").length}.`;
   const response = createToolResult(summary, result);
   response.content.push({ type: "text", text: JSON.stringify(result) });

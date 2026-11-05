@@ -57,10 +57,10 @@ or in `.env`, then restart the MCP server. Without it, the default
 
 In v1 mode, deck, note-type and tag listing use v1. Note-type design reads
 (including design verification) retrieve ordered fields, templates and CSS
-in one request. `search-notes` defaults to native cursor pages and
-`update-note-fields` reads and writes through v1 in one collection session
-per invocation. Other workflows still use legacy actions for steps that
-have not been migrated. MCP tool names and numeric IDs
+in one request. `search-notes` defaults to native cursor pages.
+`validate-note-drafts`, `create-notes`, and `update-note-fields` use v1
+with one collection session per invocation. Other workflows still use legacy
+actions for steps that have not been migrated. MCP tool names and numeric IDs
 are unchanged; out-of-range upstream IDs are rejected rather than rounded.
 The two APIs share the same request limiter and timeout. A v1 failure does
 not trigger a fallback or retry. If the installed add-on does not serve
@@ -678,9 +678,13 @@ Legacy mode defaults to offset and does not support native cursors.
 #### Note creation outcomes
 
 `create-notes` keeps the existing input format and validates the entire batch
-before sending one `addNotes` request. A failed draft prevents every Note in
-that batch from being sent. Creation is not an idempotent operation or a
-transaction; validation/duplicate checks can become stale before the write.
+before sending one creation request. A failed draft prevents every Note in
+that batch from being sent. In v1 mode, `notes.validateMany` and
+`notes.createMany` use the same fields, tags, and duplicate policy, with
+preflight, media reads, creation, and verification pinned to one collection
+session. Creation uses `atomic: false` to retain independent item outcomes.
+Legacy mode still uses `addNotes`. Validation is not a reservation or an
+idempotency guarantee; concurrent edits can change what Anki accepts.
 
 Each input has a zero-based `inputIndex` in `noteResults`:
 
@@ -688,14 +692,15 @@ Each input has a zero-based `inputIndex` in `noteResults`:
 | --- | --- |
 | `created` | An aligned creation reply acknowledged an ID, and readback confirmed that ID, its Note Type, and readable distinct Card IDs. |
 | `created-unverified` | Creation acknowledged an ID, but readback was missing, malformed, failed, or inconsistent. The ID is retained; `cardIds` is `null`. |
-| `not-created` | A valid aligned creation reply returned `null` for this input. |
-| `not-attempted` | The server knows `addNotes` was not sent, for example because validation failed. |
-| `unknown` | A trustworthy creation reply was not received; some or all Notes may already exist. |
+| `not-created` | A valid reply returned legacy `null` or a v1 lookup/validation rejection for this input. |
+| `not-attempted` | No creation request was sent, or v1 rejected the stale session before executing it. |
+| `unknown` | No trustworthy acknowledgement for this input; its Note may already exist. A v1 internal failure is not proof of rejection. |
 
 `outcome` summarizes the batch as `complete`, `incomplete`, `unknown`, or
-`not-attempted`. `createdNoteCount` is the exact count acknowledged by a valid
-creation reply, **not the number successfully read back**. It is `null` when
-the count is unknown; `0` is used only for known zero creation. A Note may
+`not-attempted`. `createdNoteCount` is the exact acknowledged count when all
+outcomes are known, **not the number successfully read back**. It is `null`
+if any outcome is unknown, even when other IDs were acknowledged and verified;
+`0` is used only for known zero creation. A Note may
 disappear after its creation was acknowledged without changing that historical
 count. Existing success fields `createdNotes` and `validations` remain, and
 each `createdNotes` entry additionally includes `verified`. Normal success
@@ -721,8 +726,9 @@ the whole batch after an incomplete/unknown result. Inspect acknowledged IDs
 with `get-note-details` where available, then review what actually exists
 before deciding whether to retry any inputs. A readback verifies ID/Note Type
 and Card ID data, not exact field/tag content, scheduling, or visual rendering.
-Reads, creation, and verification are not atomic and do not lock the profile
-or exclude concurrent edits.
+Reads, creation, and verification are not atomic and do not exclude concurrent
+edits. V1 session checks prevent later steps from operating in a different
+profile, but cannot undo a write acknowledged before a profile switch.
 
 #### Safe field updates
 

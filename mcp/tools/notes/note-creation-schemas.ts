@@ -42,7 +42,7 @@ export const noteCreationResultSchema = z.union([
 export const noteCreationOutputSchema = z.object({
   outcome: z.enum(["complete", "incomplete", "unknown", "not-attempted"]),
   createdNoteCount: z.number().int().nonnegative().nullable()
-    .describe("Exact count acknowledged by a valid positional creation reply; null when creation outcome is unknown"),
+    .describe("Exact acknowledged count when every creation outcome is known; null if any outcome is unknown"),
   createdNotes: z.array(z.object({
     inputIndex: inputIndexSchema,
     noteId: noteIdSchema,
@@ -52,7 +52,7 @@ export const noteCreationOutputSchema = z.object({
   })),
   noteResults: z.array(noteCreationResultSchema),
   reportedNoteIds: z.array(noteIdSchema).max(NOTE_BATCH_LIMIT)
-    .describe("Distinct IDs reported by addNotes, including unmapped IDs from malformed replies; not proof of ownership or creation"),
+    .describe("Distinct IDs reported by AnkiConnect, including unmapped IDs from malformed replies; not proof of ownership or creation"),
   reportedNoteIdsTruncated: z.boolean(),
   validations: z.array(noteDraftValidationSchema),
   warnings: z.array(z.string()),

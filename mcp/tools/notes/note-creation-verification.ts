@@ -1,5 +1,4 @@
 import { z } from "zod";
-import { getAnkiNotesInfo } from "../../../anki-api/notes/note-client.js";
 import type { AnkiNoteDraft } from "../../../anki-api/notes/note-types.js";
 import { createdCardIdsSchema, type NoteCreationResult } from "./note-creation-schemas.js";
 import { creationErrorDetail } from "./note-creation-results.js";
@@ -13,22 +12,23 @@ const readbackSchema = z.object({
 
 /**
  * Verifies ID, Note Type, and readable Card IDs, not exact field/tag contents.
- * Read failures never erase the IDs already acknowledged by addNotes.
+ * Read failures never erase the IDs already acknowledged by creation.
  */
 export async function verifyCreatedNotes(
   rows: NoteCreationResult[], drafts: AnkiNoteDraft[],
+  readback: (ids: number[]) => Promise<unknown>,
 ): Promise<{ noteResults: NoteCreationResult[]; warnings: string[] }> {
   const pending = rows.filter((row) => row.status === "created-unverified");
   if (pending.length === 0) return { noteResults: rows, warnings: [] };
   const ids = pending.map(({ noteId }) => noteId);
   let reply: unknown;
   try {
-    reply = await getAnkiNotesInfo(ids);
+    reply = await readback(ids);
   } catch (error) {
     return { noteResults: rows, warnings: [`Creation was acknowledged, but readback failed. Notes may already exist. ${creationErrorDetail(error)}`] };
   }
   if (!Array.isArray(reply)) {
-    return { noteResults: rows, warnings: ["Creation was acknowledged, but notesInfo returned a malformed result. Known Note IDs are retained."] };
+    return { noteResults: rows, warnings: ["Creation was acknowledged, but readback returned a malformed result. Known Note IDs are retained."] };
   }
   const requested = new Set(ids);
   const byId = new Map<number, z.infer<typeof readbackSchema>>();

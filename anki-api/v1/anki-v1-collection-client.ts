@@ -24,8 +24,8 @@ const noteTypeDesignSchema = v1EntitySummarySchema.extend({
 });
 
 /** Normalizes v1 list records to the existing name-to-ID client contract. */
-export async function getV1NameMap(method: "decks.list" | "noteTypes.list"): Promise<Record<string, number>> {
-  const entries = await callAnkiV1(method, {}, entityListSchema);
+export async function getV1NameMap(method: "decks.list" | "noteTypes.list", session?: string): Promise<Record<string, number>> {
+  const entries = await callAnkiV1(method, session === undefined ? {} : { session }, entityListSchema);
   if (new Set(entries.map(({ name }) => name)).size !== entries.length ||
     new Set(entries.map(({ id }) => id)).size !== entries.length) {
     throw invalidAnkiV1Response(method);
@@ -44,9 +44,11 @@ export async function getV1CollectionSession(): Promise<string> {
 }
 
 /** Gets an ordered field/template snapshot and its CSS in a single exchange. */
-export async function getV1NoteTypeDesign(modelName: string) {
+export async function getV1NoteTypeDesign(modelName: string, session?: string) {
   const method = "noteTypes.get";
-  const design = await callAnkiV1(method, { noteType: { name: modelName } }, noteTypeDesignSchema);
+  const design = await callAnkiV1(method, {
+    noteType: { name: modelName }, ...(session === undefined ? {} : { session }),
+  }, noteTypeDesignSchema);
   if (design.name !== modelName ||
     new Set(design.fields.map(({ name }) => name)).size !== design.fields.length ||
     new Set(design.templates.map(({ name }) => name)).size !== design.templates.length) {

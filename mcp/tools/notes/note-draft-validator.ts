@@ -1,20 +1,14 @@
 import type { AnkiNoteDraft } from "../../../anki-api/notes/note-types.js";
-import { getDeckNameMap } from "../../../anki-api/decks/deck-client.js";
-import {
-  getAnkiNoteTypeFieldNames,
-  getAnkiNoteTypeNameMap,
-} from "../../../anki-api/note-types/note-type-client.js";
-import { validateAnkiNoteDrafts } from "../../../anki-api/notes/note-client.js";
 import {
   type NoteDraft,
   type NoteDraftValidation,
 } from "./shared-schemas.js";
-import { loadAnkiMediaFiles } from "../media/media-loader.js";
 import {
   attachMediaReferenceToField,
 } from "../media/media-reference-utils.js";
 import { isAttachableMediaKind } from "../media/media-utils.js";
 import type { LoadedMediaFile } from "../media/media-loader.js";
+import { openNoteCreationAccess, type NoteCreationAccess } from "./note-creation-access.js";
 import { canonicalizeFields } from "./note-field-utils.js";
 import { unique } from "./note-utils.js";
 
@@ -29,28 +23,30 @@ export interface PreparedNoteDrafts {
  */
 export async function prepareNoteDrafts(
   drafts: NoteDraft[],
+  access?: NoteCreationAccess,
 ): Promise<PreparedNoteDrafts> {
+  const backend = access ?? await openNoteCreationAccess();
   const mediaFilenames = unique(
     drafts.flatMap(({ mediaReferences }) =>
       mediaReferences.map(({ filename }) => filename),
     ),
   );
   const [decks, noteTypes, mediaFiles] = await Promise.all([
-    getDeckNameMap(),
-    getAnkiNoteTypeNameMap(),
-    loadAnkiMediaFiles(mediaFilenames),
+    backend.getDecks(),
+    backend.getNoteTypes(),
+    backend.loadMediaFiles(mediaFilenames),
   ]);
   const existingModelNames = unique(
     drafts
       .map(({ modelName }) => modelName)
-      .filter((modelName) => noteTypes[modelName] !== undefined),
+      .filter((modelName) => Object.hasOwn(noteTypes, modelName)),
   );
   const fieldNameEntries = await Promise.all(
     existingModelNames.map(
       async (modelName) =>
         [
           modelName,
-          await getAnkiNoteTypeFieldNames(modelName),
+          await backend.getFields(modelName),
         ] as const,
     ),
   );
@@ -77,7 +73,7 @@ export async function prepareNoteDrafts(
   const remoteValidations =
     remotelyValidatedNotes.length === 0
       ? []
-      : await validateAnkiNoteDrafts(remotelyValidatedNotes);
+      : await backend.validate(remotelyValidatedNotes);
 
   if (remoteValidations.length !== remotelyValidatedNotes.length) {
     throw new Error(
@@ -133,11 +129,11 @@ function prepareDraft(
   fieldsByModel: Map<string, string[]>,
   mediaFiles: Map<string, LoadedMediaFile | null>,
 ): AnkiNoteDraft | string {
-  if (decks[draft.deckName] === undefined) {
+  if (!Object.hasOwn(decks, draft.deckName)) {
     return `Deck not found: ${draft.deckName}`;
   }
 
-  if (noteTypes[draft.modelName] === undefined) {
+  if (!Object.hasOwn(noteTypes, draft.modelName)) {
     return `Note type not found: ${draft.modelName}`;
   }
 
@@ -209,7 +205,7 @@ function prepareDraft(
 
   if (
     draft.options.duplicateScope === "deck" &&
-    decks[duplicateDeckName] === undefined
+    !Object.hasOwn(decks, duplicateDeckName)
   ) {
     return `Duplicate-scope deck not found: ${duplicateDeckName}`;
   }
