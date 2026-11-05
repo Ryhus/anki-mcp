@@ -4,7 +4,7 @@ import { AnkiRequestError } from "../anki-request-error.js";
 import { openV1Adapter, readV1Acks, searchV1IdPage, type V1AdapterContext } from "../v1/anki-v1-adapter-utils.js";
 import { v1EntitySummarySchema } from "../v1/anki-v1-collection-client.js";
 import { AnkiV1Error, invalidAnkiV1Response } from "../v1/anki-v1-request.js";
-import type { AnkiNoteTypeTemplateMap } from "./note-type-types.js";
+import type { AnkiCreateNoteTypeInput, AnkiCreateNoteTypeTemplate, AnkiNoteTypeTemplateMap } from "./note-type-types.js";
 
 const updateMethod = "noteTypes.update";
 export const deleteUnusedNoteTypeMethod = "noteTypes.deleteUnused";
@@ -33,6 +33,24 @@ const usageSchema = z.array(z.object({
 
 const toNativeRef = (reference: NoteTypeReference) =>
   "id" in reference ? { id: String(reference.id) } : reference;
+
+export const toNativeNoteTypeTemplate = ({ Name, Front, Back }: AnkiCreateNoteTypeTemplate) => ({
+  name: Name, questionHtml: Front, answerHtml: Back,
+});
+
+/** Sends an optional sort field in the native create request, not as a second mutation. */
+export async function createManagedNoteType(ctx: V1AdapterContext, {
+  modelName, inOrderFields, cardTemplates, css, isCloze, sortField,
+}: AnkiCreateNoteTypeInput) {
+  const method = "noteTypes.create";
+  const created = await ctx.request(method, {
+    name: modelName, fields: inOrderFields.map((name) => ({ name })),
+    templates: cardTemplates.map(toNativeNoteTypeTemplate), css, kind: isCloze ? "cloze" : "normal",
+    ...(sortField === undefined ? {} : { sortField }),
+  }, v1EntitySummarySchema);
+  if (created.name !== modelName) throw invalidAnkiV1Response(method);
+  return created;
+}
 
 export async function openNoteTypeManagement(method = updateMethod): Promise<V1AdapterContext> {
   if (!useAnkiV1(method)) {

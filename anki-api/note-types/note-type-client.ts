@@ -1,5 +1,6 @@
 import { invokeAnki } from "../anki-request.js";
 import { useAnkiV1 } from "../anki-api-mode.js";
+import { AnkiRequestError } from "../anki-request-error.js";
 import { getV1NameMap } from "../v1/anki-v1-collection-client.js";
 import type {
   AnkiCreatedNoteType,
@@ -19,13 +20,18 @@ export function createAnkiNoteType({
   cardTemplates,
   css,
   isCloze,
+  sortField,
 }: AnkiCreateNoteTypeInput): Promise<AnkiCreatedNoteType> {
+  if (sortField !== undefined && !useAnkiV1("noteTypes.create")) {
+    throw new AnkiRequestError("configuration", "noteTypes.create", "Specifying sortField requires ANKI_API_MODE=v1.", false);
+  }
   return invokeAnki<AnkiCreatedNoteType>("createModel", {
     modelName,
     inOrderFields,
     cardTemplates,
     css,
     isCloze,
+    ...(sortField === undefined ? {} : { sortField }),
   });
 }
 

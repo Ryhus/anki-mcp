@@ -35,6 +35,9 @@ export const noteTypeFieldNameSchema = z
   .max(500)
   .describe("Existing Anki note-type field name");
 
+export const noteTypeSortFieldNameSchema = z.string().min(1).max(500)
+  .describe("Exact note-type field name used for sorting in the Anki Browser");
+
 export const newNoteTypeFieldNameSchema = noteTypeFieldNameSchema
   .refine(
     (name) => !ankiSpecialFieldNameSet.has(name.toLowerCase()),

@@ -45,6 +45,7 @@ export interface AnkiCreateNoteTypeInput {
   cardTemplates: AnkiCreateNoteTypeTemplate[];
   css: string;
   isCloze: boolean;
+  sortField?: string;
 }
 
 export interface AnkiCreatedNoteType {

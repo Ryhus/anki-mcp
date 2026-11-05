@@ -7,12 +7,12 @@ import {
 import { REVERSIBLE_MUTATION_TOOL_ANNOTATIONS } from "../../utils/tool-annotations.js";
 import { createToolResult } from "../../utils/tool-result.js";
 import { hasSameFieldOrder } from "./note-type-schema-utils.js";
-import { noteTypeIdSchema } from "./shared-schemas.js";
+import { noteTypeIdSchema, noteTypeSortFieldNameSchema } from "./shared-schemas.js";
 
 const impactHashSchema = z.string().regex(/^[a-f0-9]{64}$/u);
 const inputSchema = z.object({
   noteTypeId: noteTypeIdSchema.describe("Stable ID from list-note-types or get-note-type-schema"),
-  sortField: z.string().min(1).max(500).describe("Exact existing field name from get-note-type-schema"),
+  sortField: noteTypeSortFieldNameSchema.describe("Exact existing field name from get-note-type-schema"),
   dryRun: z.boolean().default(true).describe("Preview without modifying Anki"),
   expectedImpactHash: impactHashSchema.optional().describe("Hash from the reviewed sort-field preview"),
   confirmChange: z.boolean().default(false),

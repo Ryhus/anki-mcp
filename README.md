@@ -613,15 +613,16 @@ are not authentication or proof of human approval.
 - `get-note-type-design` returns the complete front/back HTML, shared CSS,
   ordered fields, and a revision hash.
 - `create-note-type` validates and creates a new Normal or Cloze note type from
-  ordered fields, complete card templates, and shared CSS.
+  ordered fields, complete card templates, and shared CSS, with optional
+  Browser sort field selection in v1.
 - `rename-note-type` previews and renames an existing note type by ID without
   replacing its Notes or Cards. Requires AnkiConnect v1.
 - `set-note-type-sort-field` previews and changes the existing field shown
   in the Browser's Sort Field column for one note type. Requires AnkiConnect v1.
 - `delete-unused-note-type` previews removal of one explicitly selected note
   type. It refuses used types and the last type. Requires AnkiConnect v1.
-- `clone-note-type` safely copies ordered field names, card template HTML, and
-  shared CSS into a new independent note type without copying notes or cards.
+- `clone-note-type` safely copies ordered field names, card template HTML,
+  shared CSS, and the sort field (v1) without copying notes or cards.
 - `add-note-type-field` adds an empty field to every note of a note type,
   optionally at a selected zero-based order.
 - `rename-note-type-field` renames one field while preserving existing values
@@ -687,6 +688,12 @@ HTML, CSS, and Normal/Cloze compatibility. Repeat the same request with
 `dryRun: false` only after reviewing the result. The operation creates only the
 schema and design; it does not create notes or cards. A Cloze definition must
 have exactly one card template with a `{{cloze:Field}}` filter on its front.
+In v1, optionally set `sortField` to an exact name from `fields`. For
+example, with `"fields":["Verb","Uebersetzung"]`, pass
+`"sortField":"Uebersetzung"` to sort by the translation without changing
+which first field Anki uses for duplicate checks. Omit it to use the first
+field. The tool verifies the saved sort field after creating the type.
+Legacy mode does not accept the option and reports `sortField: null`.
 
 The Card Template lifecycle is split into focused operations. Use
 `get-note-type-design` to read names, order, HTML, and `designHash`; use
@@ -733,16 +740,18 @@ created. Pre-read, write, and readback are not atomic; this verifies a saved
 HTML/CSS snapshot, not visual rendering or every Note Type property. Tool
 parameters and success response fields are unchanged.
 
-To create a separate design, call `clone-note-type` in dry-run mode, then
-repeat it with `dryRun: false` and the returned source design hash. The clone
-can be styled independently and used as `modelName` when creating new notes.
-AnkiConnect does not expose the source model's normal/Cloze flag, so the tool
-detects Cloze templates from `{{cloze:...}}` filters and provides an explicit
-`isCloze` override for unusual templates.
+To create a separate design, call `clone-note-type` in dry-run mode. In v1,
+review the result and repeat the same proposal with `dryRun: false` and the
+returned `cloneHash` as `expectedCloneHash`. This hash covers the collection
+session, source design, ordered fields, sort field, and target proposal. The
+tool verifies that the clone kept the source sort field. Legacy mode still
+requires `expectedSourceDesignHash` from `sourceDesignHash` and cannot
+copy a custom sort field.
 
-The clone copies ordered field names, card template HTML, and shared CSS. It
-does not copy notes, cards, deck placement, field descriptions, editor font
-settings, or a custom sort-field selection.
+The clone can be styled independently and used as `modelName` when creating
+notes. The tool detects Cloze templates from `{{cloze:...}}` filters and
+provides an `isCloze` override for unusual templates. It does not copy
+notes, cards, deck placement, field descriptions, or editor font settings.
 
 Field mutations also default to `dryRun: true`. Call `get-note-type-schema`,
 review its ordered fields and `schemaHash`, preview the mutation, and pass that

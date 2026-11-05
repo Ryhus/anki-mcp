@@ -1,12 +1,10 @@
-import { getManagedNoteTypeTemplateFields } from "../note-types/note-type-management-client.js";
+import {
+  createManagedNoteType, getManagedNoteTypeTemplateFields, toNativeNoteTypeTemplate,
+} from "../note-types/note-type-management-client.js";
 import type { AnkiCreateNoteTypeInput, AnkiCreateNoteTypeTemplate, AnkiNoteTypeTemplateUpdates } from "../note-types/note-type-types.js";
 import { getV1NameMap, getV1NoteTypeDesign, v1EntitySummarySchema } from "./anki-v1-collection-client.js";
 import { ref, type V1AdapterContext, type V1Route } from "./anki-v1-adapter-utils.js";
 import { invalidAnkiV1Response } from "./anki-v1-request.js";
-
-const templateInput = ({ Name, Front, Back }: AnkiCreateNoteTypeTemplate) => ({
-  name: Name, questionHtml: Front, answerHtml: Back,
-});
 
 function readDesign(ctx: V1AdapterContext, name: unknown) {
   return getV1NoteTypeDesign(name as string, ctx.session, ctx.options);
@@ -32,16 +30,7 @@ export const v1NoteTypeRoutes = {
   async modelStyling({ modelName }, ctx) {
     return { css: (await readDesign(ctx, modelName)).css };
   },
-  async createModel(params, ctx) {
-    const { modelName, inOrderFields, cardTemplates, css, isCloze } = params as unknown as AnkiCreateNoteTypeInput;
-    const method = "noteTypes.create";
-    const created = await ctx.request(method, {
-      name: modelName, fields: inOrderFields.map(ref), templates: cardTemplates.map(templateInput),
-      css, kind: isCloze ? "cloze" : "normal",
-    }, v1EntitySummarySchema);
-    if (created.name !== modelName) throw invalidAnkiV1Response(method);
-    return created;
-  },
+  createModel: (params, ctx) => createManagedNoteType(ctx, params as unknown as AnkiCreateNoteTypeInput),
   modelFieldAdd: ({ modelName, fieldName, index }, ctx) =>
     edit(ctx, modelName, [{ op: "addField", field: ref(fieldName as string), ...(index === undefined ? {} : { index }) }]),
   modelFieldRename: ({ modelName, oldFieldName, newFieldName }, ctx) =>
@@ -51,7 +40,7 @@ export const v1NoteTypeRoutes = {
   modelFieldRemove: ({ modelName, fieldName }, ctx) =>
     edit(ctx, modelName, [{ op: "removeField", name: fieldName }]),
   modelTemplateAdd: ({ modelName, template }, ctx) =>
-    edit(ctx, modelName, [{ op: "addTemplate", template: templateInput(template as AnkiCreateNoteTypeTemplate) }]),
+    edit(ctx, modelName, [{ op: "addTemplate", template: toNativeNoteTypeTemplate(template as AnkiCreateNoteTypeTemplate) }]),
   modelTemplateRename: ({ modelName, oldTemplateName, newTemplateName }, ctx) =>
     edit(ctx, modelName, [{ op: "updateTemplate", name: oldTemplateName, patch: { name: newTemplateName } }]),
   modelTemplateReposition: ({ modelName, templateName, index }, ctx) =>

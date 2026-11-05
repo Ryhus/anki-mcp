@@ -21,15 +21,7 @@ export async function loadNoteTypeDesign(
   modelName: string,
 ): Promise<NoteTypeDesign> {
   if (useAnkiV1("noteTypes.get")) {
-    const { id, name, fields, css, templates: records } = await getV1NoteTypeDesign(modelName);
-    const templates = records.map(({ name, questionHtml, answerHtml }, order) => ({
-      name, order, front: questionHtml, back: answerHtml,
-    }));
-    return {
-      noteType: { id, name, fields: fields.map(({ name }, order) => ({ name, order })) },
-      css, templates, designHash: calculateNoteTypeDesignHash(css, templates),
-      scopeWarning: NOTE_TYPE_SCOPE_WARNING,
-    };
+    return normalizeV1NoteTypeDesign(await getV1NoteTypeDesign(modelName));
   }
   const noteTypes = await getAnkiNoteTypeNameMap();
   const id = noteTypes[modelName];
@@ -54,6 +46,19 @@ export async function loadNoteTypeDesign(
     css: styling.css,
     templates,
     designHash: calculateNoteTypeDesignHash(styling.css, templates),
+    scopeWarning: NOTE_TYPE_SCOPE_WARNING,
+  };
+}
+
+export function normalizeV1NoteTypeDesign({
+  id, name, fields, css, templates: records,
+}: Awaited<ReturnType<typeof getV1NoteTypeDesign>>): NoteTypeDesign {
+  const templates = records.map(({ name, questionHtml, answerHtml }, order) => ({
+    name, order, front: questionHtml, back: answerHtml,
+  }));
+  return {
+    noteType: { id, name, fields: fields.map(({ name }, order) => ({ name, order })) },
+    css, templates, designHash: calculateNoteTypeDesignHash(css, templates),
     scopeWarning: NOTE_TYPE_SCOPE_WARNING,
   };
 }

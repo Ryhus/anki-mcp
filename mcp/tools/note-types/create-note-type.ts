@@ -1,5 +1,7 @@
 import type { CallToolResult } from "@modelcontextprotocol/server";
 import { z } from "zod";
+import { useAnkiV1 } from "../../../anki-api/anki-api-mode.js";
+import { AnkiRequestError } from "../../../anki-api/anki-request-error.js";
 import {
   createAnkiNoteType,
   getAnkiNoteTypeNameMap,
@@ -28,6 +30,7 @@ import {
   noteTypeFieldSchema,
   noteTypeNameSchema,
   noteTypeSchemaHashSchema,
+  noteTypeSortFieldNameSchema,
   noteTypeSummarySchema,
   noteTypeTemplateDesignSchema,
 } from "./shared-schemas.js";
@@ -71,6 +74,8 @@ const createNoteTypeInputSchema = z.object({
     .describe(
       "Field names in their desired order. The first field is used for duplicate checks.",
     ),
+  sortField: noteTypeSortFieldNameSchema.optional()
+    .describe("Exact name from fields. Requires AnkiConnect v1. Omit to use Anki's default first field."),
   templates: z
     .array(createNoteTypeTemplateSchema)
     .min(1)
@@ -98,6 +103,8 @@ const createNoteTypeInputSchema = z.object({
     .describe(
       "When true, validate and preview the note type without creating it",
     ),
+}).refine(({ fields, sortField }) => sortField === undefined || fields.includes(sortField), {
+  path: ["sortField"], message: "The sort field must be an exact name from fields.",
 });
 
 type CreateNoteTypeInput = z.infer<typeof createNoteTypeInputSchema>;
@@ -105,7 +112,7 @@ type CreateNoteTypeInput = z.infer<typeof createNoteTypeInputSchema>;
 export const createNoteTypeConfig = {
   title: "Create note type",
   description:
-    "Creates a new Normal or Cloze note type from ordered fields, complete card templates, and shared CSS. Defaults to dry-run mode and does not create notes or cards.",
+    "Creates a new Normal or Cloze note type from ordered fields, complete card templates, and shared CSS. Optionally selects its Browser sort field in AnkiConnect v1. Defaults to dry-run mode and does not create notes or cards.",
   inputSchema: createNoteTypeInputSchema,
   outputSchema: z.object({
     modelName: z.string(),
@@ -113,6 +120,7 @@ export const createNoteTypeConfig = {
     created: z.boolean(),
     createdNoteType: noteTypeSummarySchema.nullable(),
     isCloze: z.boolean(),
+    sortField: z.string().nullable().describe("Proposed or verified Browser sort field; null in legacy mode."),
     fields: z.array(noteTypeFieldSchema),
     templates: z.array(noteTypeTemplateDesignSchema),
     css: z.string(),
@@ -128,11 +136,17 @@ export const createNoteTypeConfig = {
 export async function createNoteType({
   modelName,
   fields,
+  sortField,
   templates,
   css,
   isCloze,
   dryRun,
 }: CreateNoteTypeInput): Promise<CallToolResult> {
+  const v1 = useAnkiV1("noteTypes.create");
+  if (!v1 && sortField !== undefined) {
+    throw new AnkiRequestError("configuration", "noteTypes.create", "Specifying sortField requires ANKI_API_MODE=v1.", false);
+  }
+  const resolvedSortField = v1 ? sortField ?? fields[0]! : null;
   const noteTypes = await getAnkiNoteTypeNameMap();
   const definitionValidation = validateNoteTypeDefinition({
     fieldNames: fields,
@@ -144,7 +158,7 @@ export async function createNoteType({
     ...definitionValidation.issues,
   ];
 
-  if (noteTypes[modelName] !== undefined) {
+  if (Object.hasOwn(noteTypes, modelName)) {
     issues.push({
       severity: "error",
       code: "note_type_already_exists",
@@ -174,6 +188,7 @@ export async function createNoteType({
     created: false,
     createdNoteType: null,
     isCloze,
+    sortField: resolvedSortField,
     fields: orderedFields,
     templates: orderedTemplates,
     css,
@@ -197,7 +212,7 @@ export async function createNoteType({
     );
   }
 
-  await createAnkiNoteType({
+  const acknowledged = await createAnkiNoteType({
     modelName,
     inOrderFields: fields,
     cardTemplates: templates.map(({ name, front, back }) => ({
@@ -207,23 +222,20 @@ export async function createNoteType({
     })),
     css,
     isCloze,
+    ...(sortField === undefined ? {} : { sortField }),
   });
 
   const [createdSchema, createdDesign] = await Promise.all([
-    loadNoteTypeSchema(modelName),
-    loadNoteTypeDesign(modelName),
-  ]);
-  const createdFieldNames = createdSchema.fields.map(({ name }) => name);
+    loadNoteTypeSchema(modelName), loadNoteTypeDesign(modelName),
+  ]).catch((error: unknown) => {
+    throw new Error(`Anki may already have created "${modelName}"; readback failed. Inspect Anki before retrying.`, { cause: error });
+  });
 
-  if (!hasSameFieldOrder(createdFieldNames, fields)) {
+  if ((v1 && (createdSchema.id !== acknowledged.id || createdDesign.noteType.id !== acknowledged.id ||
+      createdSchema.sortField !== resolvedSortField)) ||
+      !hasSameFieldOrder(createdSchema.fields.map(({ name }) => name), fields) || createdDesign.designHash !== designHash) {
     throw new Error(
-      `Created note type "${modelName}", but Anki returned an unexpected field order`,
-    );
-  }
-
-  if (createdDesign.designHash !== designHash) {
-    throw new Error(
-      `Created note type "${modelName}", but Anki returned an unexpected template or CSS design`,
+      `Anki may already have created "${modelName}", but the saved ID, field order, sort field, or design did not match. Inspect Anki before retrying.`,
     );
   }
 
@@ -237,6 +249,7 @@ export async function createNoteType({
         name: createdSchema.name,
       },
       fields: createdSchema.fields,
+      sortField: createdSchema.sortField,
       templates: createdDesign.templates,
       css: createdDesign.css,
       schemaHash: createdSchema.schemaHash,
