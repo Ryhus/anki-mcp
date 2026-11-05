@@ -21,7 +21,7 @@ for (const version of ["2025-11-25", "2026-07-28"] as const) {
     t.after(async () => { await client.close(); await handle.close(); });
     await client.connect(clientTransport);
     const { tools } = await client.listTools();
-    assert.equal(tools.length, 56);
+    assert.equal(tools.length, 57);
     const tool = tools.find(({ name }) => name === "create-notes");
     assert.ok(tool?.outputSchema);
     assert.equal(tool.annotations?.idempotentHint, false);
@@ -80,6 +80,6 @@ for (const version of ["2025-11-25", "2026-07-28"] as const) {
     assert.deepEqual(malformedData.reportedNoteIds, [4100]);
     assert.deepEqual(malformedData.createdNotes, []);
     assert.equal(state.writes, 5);
-    assert.equal((await client.listTools()).tools.length, 56, "errors preserve the MCP connection");
+    assert.equal((await client.listTools()).tools.length, 57, "errors preserve the MCP connection");
   });
 }

@@ -573,14 +573,16 @@ are not authentication or proof of human approval.
 ### Note type tools
 
 - `list-note-types` lists the note types available for note creation.
-- `get-note-type-schema` returns ordered fields and the fields used by each
-  generated card template.
+- `get-note-type-schema` returns ordered fields, the Browser sort field
+  (`sortField`, null in legacy mode), and the fields used by each card template.
 - `get-note-type-design` returns the complete front/back HTML, shared CSS,
   ordered fields, and a revision hash.
 - `create-note-type` validates and creates a new Normal or Cloze note type from
   ordered fields, complete card templates, and shared CSS.
 - `rename-note-type` previews and renames an existing note type by ID without
   replacing its Notes or Cards. Requires AnkiConnect v1.
+- `set-note-type-sort-field` previews and changes the existing field shown
+  in the Browser's Sort Field column for one note type. Requires AnkiConnect v1.
 - `clone-note-type` safely copies ordered field names, card template HTML, and
   shared CSS into a new independent note type without copying notes or cards.
 - `add-note-type-field` adds an empty field to every note of a note type,
@@ -616,6 +618,17 @@ the same ID. It does not rename fields or templates or recreate Notes or
 Cards. Update any saved searches or integrations that refer to the old name.
 The preflight and write are not atomic; if verification fails, inspect Anki
 before retrying.
+
+To change the Browser sort field, preview
+`{"noteTypeId":1234567890123,"sortField":"Uebersetzung"}` in
+`set-note-type-sort-field`. Use an exact field name from
+`get-note-type-schema`. Apply the same proposal with `dryRun: false`,
+`confirmChange: true`, and the reviewed `expectedImpactHash`. The hash
+covers the collection session, note type, ordered field names, and the old
+and new sort fields. The tool reads back the new sort field and field order.
+This applies to every Note of that type. It does not reorder fields or
+change which first field Anki uses for duplicate checks. The existing
+`schemaHash` still hashes only ordered field names.
 
 To create a note type from scratch, call `create-note-type` with ordered
 `fields` and `templates`. Its dry run validates unique names, field references,

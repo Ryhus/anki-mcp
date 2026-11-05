@@ -20,7 +20,7 @@ const EXPECTED_TOOLS = [
   "get-card-details", "get-card-preview", "get-card-review-history", "set-card-suspension",
   "set-card-flag", "reschedule-cards", "reset-cards-to-new",
   "start-card-relearning", "list-note-types", "get-note-type-schema",
-  "get-note-type-design", "clone-note-type", "create-note-type", "rename-note-type",
+  "get-note-type-design", "clone-note-type", "create-note-type", "rename-note-type", "set-note-type-sort-field",
   "add-note-type-field", "rename-note-type-field", "reposition-note-type-field",
   "delete-note-type-field", "add-note-type-template", "rename-note-type-template",
   "reposition-note-type-template", "delete-note-type-template",

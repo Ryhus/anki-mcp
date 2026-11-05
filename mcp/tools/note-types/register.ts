@@ -50,6 +50,7 @@ import {
   repositionNoteTypeTemplate,
   repositionNoteTypeTemplateConfig,
 } from "./reposition-note-type-template.js";
+import { setNoteTypeSortField, setNoteTypeSortFieldConfig } from "./set-note-type-sort-field.js";
 import {
   updateNoteTypeStyling,
   updateNoteTypeStylingConfig,
@@ -90,6 +91,11 @@ export function registerNoteTypeTools(server: McpServer): void {
     "rename-note-type",
     renameNoteTypeConfig,
     withToolErrorHandling(renameNoteType),
+  );
+  server.registerTool(
+    "set-note-type-sort-field",
+    setNoteTypeSortFieldConfig,
+    withToolErrorHandling(setNoteTypeSortField),
   );
   server.registerTool(
     "add-note-type-field",

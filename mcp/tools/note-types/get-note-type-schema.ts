@@ -19,7 +19,7 @@ type GetNoteTypeSchemaInput = z.infer<
 export const getNoteTypeSchemaConfig = {
   title: "Get note type schema",
   description:
-    "Returns ordered fields, card-template field usage, and a schema revision hash for one Anki note type. Use this before creating notes or changing fields.",
+    "Returns ordered fields, the Browser sort field (v1), card-template field usage, and a field-order revision hash for one Anki note type. Use this before creating notes or changing fields.",
   inputSchema: getNoteTypeSchemaInputSchema,
   outputSchema: z.object({
     noteType: noteTypeDetailsSchema,

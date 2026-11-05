@@ -1,12 +1,8 @@
-import { z } from "zod";
+import { getManagedNoteTypeTemplateFields } from "../note-types/note-type-management-client.js";
 import type { AnkiCreateNoteTypeInput, AnkiCreateNoteTypeTemplate, AnkiNoteTypeTemplateUpdates } from "../note-types/note-type-types.js";
 import { getV1NameMap, getV1NoteTypeDesign, v1EntitySummarySchema } from "./anki-v1-collection-client.js";
 import { ref, type V1AdapterContext, type V1Route } from "./anki-v1-adapter-utils.js";
 import { invalidAnkiV1Response } from "./anki-v1-request.js";
-
-const usageSchema = z.array(z.object({
-  templateName: z.string(), questionFields: z.array(z.string()), answerFields: z.array(z.string()),
-}));
 
 const templateInput = ({ Name, Front, Back }: AnkiCreateNoteTypeTemplate) => ({
   name: Name, questionHtml: Front, answerHtml: Back,
@@ -28,15 +24,7 @@ export const v1NoteTypeRoutes = {
   async modelFieldNames({ modelName }, ctx) {
     return (await readDesign(ctx, modelName)).fields.map(({ name }) => name);
   },
-  async modelFieldsOnTemplates({ modelName }, ctx) {
-    const rows = await ctx.request("noteTypes.getTemplateUsage", { noteType: ref(modelName as string) }, usageSchema);
-    if (new Set(rows.map(({ templateName }) => templateName)).size !== rows.length) {
-      throw invalidAnkiV1Response("noteTypes.getTemplateUsage");
-    }
-    return Object.fromEntries(rows.map(({ templateName, questionFields, answerFields }) => [
-      templateName, [questionFields, answerFields.filter((field) => !questionFields.includes(field))],
-    ]));
-  },
+  modelFieldsOnTemplates: ({ modelName }, ctx) => getManagedNoteTypeTemplateFields(ctx, ref(modelName as string)),
   async modelTemplates({ modelName }, ctx) {
     const { templates } = await readDesign(ctx, modelName);
     return Object.fromEntries(templates.map(({ name, questionHtml, answerHtml }) => [name, { Front: questionHtml, Back: answerHtml }]));

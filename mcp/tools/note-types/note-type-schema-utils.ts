@@ -1,9 +1,16 @@
 import { createHash } from "node:crypto";
+import { useAnkiV1 } from "../../../anki-api/anki-api-mode.js";
 import {
   getAnkiNoteTypeFieldNames,
   getAnkiNoteTypeNameMap,
   getAnkiNoteTypeTemplateFields,
 } from "../../../anki-api/note-types/note-type-client.js";
+import {
+  findManagedNoteTypeFieldState,
+  getManagedNoteTypeTemplateFields,
+} from "../../../anki-api/note-types/note-type-management-client.js";
+import type { AnkiNoteTypeTemplateMap } from "../../../anki-api/note-types/note-type-types.js";
+import { openV1Adapter } from "../../../anki-api/v1/anki-v1-adapter-utils.js";
 import type {
   DesignValidationIssue,
   NoteTypeDetails,
@@ -16,6 +23,14 @@ export const NOTE_TYPE_FIELD_SCOPE_WARNING =
 export async function loadNoteTypeSchema(
   modelName: string,
 ): Promise<NoteTypeDetails> {
+  if (useAnkiV1("noteTypes.get")) {
+    const ctx = await openV1Adapter({});
+    const type = await findManagedNoteTypeFieldState(ctx, { name: modelName });
+    if (type?.name !== modelName) throw new Error(`Note type not found: ${modelName}`);
+    const templates = await getManagedNoteTypeTemplateFields(ctx, { id: type.id });
+    return toNoteTypeDetails(type.id, type.name, type.fields.map(({ name }) => name), type.sortField, templates);
+  }
+
   const noteTypes = await getAnkiNoteTypeNameMap();
   const id = noteTypes[modelName];
 
@@ -28,10 +43,17 @@ export async function loadNoteTypeSchema(
     getAnkiNoteTypeTemplateFields(modelName),
   ]);
 
+  return toNoteTypeDetails(id, modelName, fieldNames, null, templates);
+}
+
+function toNoteTypeDetails(
+  id: number, modelName: string, fieldNames: string[], sortField: string | null, templates: AnkiNoteTypeTemplateMap,
+): NoteTypeDetails {
   return {
     id,
     name: modelName,
-    fields: fieldNames.map((name, order) => ({ name, order })),
+    fields: toOrderedFields(fieldNames),
+    sortField,
     cardTemplates: Object.entries(templates).map(
       ([name, [questionFields, answerFields]]) => ({
         name,

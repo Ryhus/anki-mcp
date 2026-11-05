@@ -64,6 +64,7 @@ export const noteTypeCardTemplateSchema = z.object({
 
 export const noteTypeDetailsSchema = noteTypeSummarySchema.extend({
   fields: z.array(noteTypeFieldSchema),
+  sortField: z.string().nullable().describe("Field used by the Anki Browser's Sort Field column; null in legacy mode."),
   cardTemplates: z.array(noteTypeCardTemplateSchema),
   schemaHash: z
     .string()

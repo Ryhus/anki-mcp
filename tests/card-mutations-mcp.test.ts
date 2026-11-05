@@ -23,7 +23,7 @@ for (const version of ["2025-11-25", "2026-07-28"] as const) {
     t.after(async () => { await client.close(); await handle.close(); });
     await client.connect(clientTransport);
     const { tools } = await client.listTools();
-    assert.equal(tools.length, 56);
+    assert.equal(tools.length, 57);
     assert.equal(state.requests.length, 0);
     for (const name of ["reset-cards-to-new", "start-card-relearning", "reschedule-cards"]) {
       assert.equal(tools.find((tool) => tool.name === name)?.annotations?.idempotentHint, false);
@@ -69,6 +69,6 @@ for (const version of ["2025-11-25", "2026-07-28"] as const) {
     assert.equal(partial.isError, true);
     assert.match(JSON.stringify(partial.content), /Earlier writes acknowledged but not verified: 10.*Not attempted: 30/u);
     assert.equal(state.cards.get(30)!.flags, 0);
-    assert.equal((await client.listTools()).tools.length, 56, "a failed operation does not close the connection");
+    assert.equal((await client.listTools()).tools.length, 57, "a failed operation does not close the connection");
   });
 }

@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import type { CallToolResult } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import {
-  findManagedNoteType, openNoteTypeRename, renameManagedNoteType,
+  findManagedNoteType, openNoteTypeManagement, renameManagedNoteType,
 } from "../../../anki-api/note-types/note-type-management-client.js";
 import { REVERSIBLE_MUTATION_TOOL_ANNOTATIONS } from "../../utils/tool-annotations.js";
 import { createToolResult } from "../../utils/tool-result.js";
@@ -42,7 +42,7 @@ export const renameNoteTypeConfig = {
 export async function renameNoteType({
   noteTypeId, newName, dryRun, expectedImpactHash, confirmRename,
 }: z.infer<typeof inputSchema>): Promise<CallToolResult> {
-  const ctx = await openNoteTypeRename();
+  const ctx = await openNoteTypeManagement();
   const source = await findManagedNoteType(ctx, { id: noteTypeId });
   const blockers: string[] = [];
   let impactHash: string | null = null;
