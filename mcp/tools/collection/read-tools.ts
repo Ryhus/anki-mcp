@@ -6,10 +6,7 @@ import {
 import { READ_ONLY_TOOL_ANNOTATIONS } from "../../utils/tool-annotations.js";
 import { createToolResult } from "../../utils/tool-result.js";
 import type { CollectionOperationRegistry } from "./operation-registry.js";
-
-const operationInput = z.strictObject({
-  operationId: z.string().min(1).max(256).describe("Operation ID returned by a collection tool on this MCP server."),
-});
+import { collectionOperationInputSchema } from "./shared-schemas.js";
 
 export const getCollectionInfoConfig = {
   title: "Get active Anki collection information",
@@ -26,15 +23,15 @@ export async function getCollectionInfo() {
 export const getCollectionOperationConfig = {
   title: "Get Anki collection operation status",
   description: "Check a submitted sync, database check, or Undo without starting another. If waitingForUser, use Anki's UI and check the same operation ID again. Requires AnkiConnect v1.",
-  inputSchema: operationInput,
+  inputSchema: collectionOperationInputSchema,
   outputSchema: z.object({
-    operationId: operationInput.shape.operationId, method: collectionOperationMethodSchema, profile: z.string(),
+    operationId: collectionOperationInputSchema.shape.operationId, method: collectionOperationMethodSchema, profile: z.string(),
     state: collectionOperationStateSchema, result: collectionOperationResultSchema.nullable(), error: collectionOperationErrorSchema.nullable(),
   }),
   annotations: READ_ONLY_TOOL_ANNOTATIONS,
 };
 
-export async function getCollectionOperation(registry: CollectionOperationRegistry, { operationId }: z.infer<typeof operationInput>) {
+export async function getCollectionOperation(registry: CollectionOperationRegistry, { operationId }: z.infer<typeof collectionOperationInputSchema>) {
   requireCollectionV1("operations.get");
   const status = await registry.inspect(operationId);
   let message = `Anki collection operation status: ${status.state}.`;

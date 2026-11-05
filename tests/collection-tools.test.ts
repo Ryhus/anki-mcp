@@ -5,6 +5,7 @@ import { InMemoryTransport } from "@modelcontextprotocol/server";
 import { serveStdio } from "@modelcontextprotocol/server/stdio";
 import { type CollectionContext, undoMethod } from "../anki-api/collection/collection-client.js";
 import { createServer } from "../mcp/create-server.js";
+import { cancelCollectionOperationConfig } from "../mcp/tools/collection/cancel-collection-operation.js";
 import {
   checkCollectionIntegrityConfig, syncCollectionConfig, undoCollectionActionConfig,
 } from "../mcp/tools/collection/guarded-tools.js";
@@ -19,6 +20,7 @@ const syncTool = "sync-collection";
 const checkTool = "check-collection-integrity";
 const undoTool = "undo-collection-action";
 const statusTool = "get-collection-operation";
+const cancelTool = "cancel-collection-operation";
 type NativeState = {
   operationId: string; method: string; session: string; state: string;
   result?: unknown; error?: { code: number; message: string };
@@ -41,6 +43,8 @@ function fixture(t: TestContext) {
     submitted: [] as string[],
     rejectSubmission: false,
     loseAcknowledgement: false,
+    loseCancellationAcknowledgement: false,
+    rejectCancellation: false,
     blockCollectionReads: false,
   };
   t.mock.method(globalThis, "fetch", async (url: string, init: RequestInit) => {
@@ -58,6 +62,18 @@ function fixture(t: TestContext) {
       assert.deepEqual(Object.keys(params), ["operationId"], "a status query must not pin the current collection");
       const record = state.records.get(params.operationId);
       return record === undefined ? error(1001) : ok(record);
+    }
+    if (method === "operations.cancel") {
+      assert.deepEqual(Object.keys(params), ["operationId"], "cancellation is application-scoped");
+      const record = state.records.get(params.operationId);
+      if (record === undefined) return error(1001);
+      if (["succeeded", "failed", "cancelled"].includes(record.state)) return ok({ requested: false });
+      if (state.rejectCancellation) return error(1006);
+      if (record.state === "queued") {
+        record.state = "cancelled";
+        record.error = { code: 1007, message: "cancelled in queue" };
+      }
+      return ok({ requested: state.loseCancellationAcknowledgement ? "invalid" : true });
     }
     assert.equal(params.session, state.session);
     if (method === "collection.refresh") {
@@ -161,6 +177,40 @@ for (const version of ["2025-11-25", "2026-07-28"] as const) {
     assert.equal((await call(syncTool, apply)).isError, true);
     assert.deepEqual(state.submitted, ["collection.sync"]);
   });
+
+  test(`MCP ${version}: cancellation acknowledges one request for a known queued operation`, async (t) => {
+    const state = fixture(t);
+    const { client, call } = await connect(t, version);
+    const { tools } = await client.listTools();
+    const tool = tools.find(({ name }) => name === cancelTool);
+    assert.equal(tool?.annotations?.readOnlyHint, false);
+    assert.equal(tool?.annotations?.idempotentHint, false);
+    assert.equal((await call(cancelTool, { operationId: "foreign" })).isError, true);
+    assert.equal(state.calls.length, 0);
+    const preview = checkCollectionIntegrityConfig.outputSchema.parse((await call(checkTool)).structuredContent);
+    assert.ok(preview.confirmationToken);
+    const started = checkCollectionIntegrityConfig.outputSchema.parse(
+      (await call(checkTool, approve(preview.confirmationToken))).structuredContent,
+    );
+    assert.ok(started.operationId);
+    const args = { operationId: started.operationId };
+    const [first, second] = await Promise.all([call(cancelTool, args), call(cancelTool, args)]);
+    const replies = [first, second];
+    assert.equal(replies.filter(({ isError }) => isError).length, 1);
+    const result = replies.find(({ isError }) => !isError)!;
+    const ack = cancelCollectionOperationConfig.outputSchema.parse(result.structuredContent);
+    assert.deepEqual(ack, { ...args, method: "collection.checkIntegrity", profile: state.profile, requested: true });
+    assert.match(JSON.stringify(result.content), /acknowledged.*get-collection-operation/u);
+    assert.equal((await call(checkTool)).isError, true, "an acknowledgement must not release the active operation");
+    const status = getCollectionOperationConfig.outputSchema.parse((await call(statusTool, args)).structuredContent);
+    assert.equal(status.state, "cancelled");
+    const callsBefore = state.calls.length;
+    const finished = cancelCollectionOperationConfig.outputSchema.parse((await call(cancelTool, args)).structuredContent);
+    assert.equal(finished.requested, false);
+    assert.equal(state.calls.length, callsBefore, "no request for a cached terminal operation");
+    assert.equal((await call(checkTool)).isError, undefined);
+    assert.equal(state.calls.filter(({ method }) => method === "operations.cancel").length, 1);
+  });
 }
 
 test("integrity returns the native report; Undo only returns the actual entry after completion", async (t) => {
@@ -259,6 +309,62 @@ test("a rejected write can be reviewed again, but an unconfirmed submission bloc
   assert.equal((await call(infoTool)).isError, undefined, "read-only collection information remains available");
 });
 
+test("cancellation does not require an active session and can lose the race with completion", async (t) => {
+  const state = fixture(t);
+  const { call } = await connect(t);
+  const preview = syncCollectionConfig.outputSchema.parse((await call(syncTool)).structuredContent);
+  assert.ok(preview.confirmationToken);
+  const started = syncCollectionConfig.outputSchema.parse((await call(syncTool, approve(preview.confirmationToken))).structuredContent);
+  assert.ok(started.operationId);
+  const args = { operationId: started.operationId };
+  const record = state.records.get(started.operationId)!;
+  record.state = "waitingForUser";
+  state.blockCollectionReads = true;
+  state.session = "changed-session";
+  const ack = cancelCollectionOperationConfig.outputSchema.parse((await call(cancelTool, args)).structuredContent);
+  assert.equal(ack.requested, true);
+  assert.deepEqual(state.calls.at(-1), { method: "operations.cancel", params: args });
+  assert.equal(getCollectionOperationConfig.outputSchema.parse((await call(statusTool, args)).structuredContent).state, "waitingForUser");
+  Object.assign(record, { state: "succeeded", result: { collectionComplete: true, mediaComplete: true } });
+  assert.equal(getCollectionOperationConfig.outputSchema.parse((await call(statusTool, args)).structuredContent).state, "succeeded");
+  assert.deepEqual(state.submitted, ["collection.sync"]);
+});
+
+test("native cancellation rejection, terminal replies, and lost acknowledgements are distinct", async (t) => {
+  const state = fixture(t);
+  const { call } = await connect(t);
+  async function startUndo() {
+    const preview = undoCollectionActionConfig.outputSchema.parse((await call(undoTool)).structuredContent);
+    assert.ok(preview.confirmationToken);
+    const started = undoCollectionActionConfig.outputSchema.parse((await call(undoTool, approve(preview.confirmationToken))).structuredContent);
+    assert.ok(started.operationId);
+    return { operationId: started.operationId };
+  }
+  const first = await startUndo();
+  const record = state.records.get(first.operationId)!;
+  record.state = "running";
+  state.rejectCancellation = true;
+  const unsupported = await call(cancelTool, first);
+  assert.equal(unsupported.isError, true);
+  assert.match(JSON.stringify(unsupported.content), /unsupportedCapability/u);
+  assert.equal(getCollectionOperationConfig.outputSchema.parse((await call(statusTool, first)).structuredContent).state, "running");
+  state.rejectCancellation = false;
+  Object.assign(record, { state: "succeeded", result: { changed: true, label: "Edit" } });
+  assert.equal(cancelCollectionOperationConfig.outputSchema.parse((await call(cancelTool, first)).structuredContent).requested, false);
+  assert.equal(getCollectionOperationConfig.outputSchema.parse((await call(statusTool, first)).structuredContent).state, "succeeded");
+
+  const second = await startUndo();
+  state.loseCancellationAcknowledgement = true;
+  const lost = await call(cancelTool, second);
+  assert.equal(lost.isError, true);
+  assert.match(JSON.stringify(lost.content), /No retry was performed/u);
+  const again = await call(cancelTool, second);
+  assert.equal(again.isError, true);
+  assert.match(JSON.stringify(again.content), /no duplicate request was sent/u);
+  assert.equal(getCollectionOperationConfig.outputSchema.parse((await call(statusTool, second)).structuredContent).state, "cancelled");
+  assert.equal(state.calls.filter(({ method }) => method === "operations.cancel").length, 3);
+});
+
 test("confirmations expire and are scoped to one running server", async () => {
   let time = 0;
   const registry = new CollectionOperationRegistry(() => time);
@@ -278,8 +384,8 @@ test("collection tools reject legacy mode without contacting Anki", async (t) =>
   const state = fixture(t);
   process.env.ANKI_API_MODE = "legacy";
   const { call } = await connect(t);
-  for (const tool of [infoTool, refreshTool, syncTool, checkTool, undoTool, statusTool]) {
-    const result = await call(tool, tool === statusTool ? { operationId: "test" } : {});
+  for (const tool of [infoTool, refreshTool, syncTool, checkTool, undoTool, statusTool, cancelTool]) {
+    const result = await call(tool, tool === statusTool || tool === cancelTool ? { operationId: "test" } : {});
     assert.equal(result.isError, true);
     assert.match(JSON.stringify(result.content), /ANKI_API_MODE=v1/u);
   }

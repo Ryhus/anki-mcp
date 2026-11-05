@@ -4,13 +4,14 @@ import { AnkiRequestError } from "../anki-request-error.js";
 import { openV1Adapter, type V1AdapterContext } from "../v1/anki-v1-adapter-utils.js";
 import { collectionSchedulerSchema, getV1Collection } from "../v1/anki-v1-context.js";
 import { acceptV1Operation, readV1Operation } from "../v1/anki-v1-operation.js";
-import { AnkiV1Error, invalidAnkiV1Response } from "../v1/anki-v1-request.js";
+import { AnkiV1Error, callAnkiV1, invalidAnkiV1Response } from "../v1/anki-v1-request.js";
 
 const infoMethod = "collection.get";
 const refreshMethod = "collection.refresh";
 export const syncMethod = "collection.sync";
 export const integrityMethod = "collection.checkIntegrity";
 export const undoMethod = "collection.undo";
+export const cancelOperationMethod = "operations.cancel";
 export const collectionOperationMethodSchema = z.enum([syncMethod, integrityMethod, undoMethod]);
 export type CollectionOperationMethod = z.infer<typeof collectionOperationMethodSchema>;
 export type CollectionOperationProposal =
@@ -68,6 +69,11 @@ export async function refreshCollectionWindows(target: z.infer<typeof refreshTar
 export function startCollectionOperation(ctx: CollectionContext, proposal: CollectionOperationProposal) {
   const params = proposal.method === syncMethod ? { includeMedia: proposal.includeMedia } : {};
   return acceptV1Operation(ctx, proposal.method, params);
+}
+
+/** Acknowledges a cancellation request, not the operation's final state. */
+export function requestCollectionOperationCancellation(operationId: string) {
+  return callAnkiV1(cancelOperationMethod, { operationId }, z.object({ requested: z.boolean() }));
 }
 
 export async function readCollectionOperationStatus(

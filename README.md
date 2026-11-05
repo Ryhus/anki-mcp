@@ -318,6 +318,9 @@ The server currently exposes tools for:
   so never use this tool as automatic rollback of an MCP call.
 - `get-collection-operation` reports the status and eventual result of a
   submitted sync, integrity check, or Undo. It never starts another operation.
+- `cancel-collection-operation` requests cancellation of an operation started
+  by this running MCP server. Pass the returned `operationId` only when the
+  user asks to stop it.
 
 Sync, integrity checks, and Undo default to `dryRun: true`. The preview
 identifies the profile and request but does not contact the sync server,
@@ -334,6 +337,16 @@ again. Check for terminal status before starting another collection operation.
 Full sync can change the active session, but status still follows the
 original operation. If a submission's acknowledgement is lost, MCP does
 not retry; inspect Anki and restart MCP before starting another operation.
+
+For example, call `cancel-collection-operation` with
+`{"operationId":"<id from the submitted operation>"}`, then check that same
+ID with `get-collection-operation`. `requested: true` acknowledges the
+request, not the outcome. A queued operation can be stopped before it
+starts; a running operation may not support cancellation or may finish
+first. `requested: false` means it was already finished. Cancellation does
+not roll back changes already made. If a cancellation reply is lost, check
+the status instead of sending it again. When Anki is showing a full-sync
+dialog, you can also choose Cancel in Anki.
 
 ### Study statistics
 

@@ -32,7 +32,7 @@ const EXPECTED_TOOLS = [
   "attach-media-to-notes", "detach-media-from-notes", "delete-media-file", "get-study-stats", "get-study-summary",
   "export-deck-package", "import-deck-package",
   "get-collection-info", "refresh-collection", "sync-collection", "check-collection-integrity",
-  "undo-collection-action", "get-collection-operation",
+  "undo-collection-action", "get-collection-operation", "cancel-collection-operation",
 ].sort();
 
 const PNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";

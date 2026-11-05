@@ -1,5 +1,6 @@
 import type { McpServer } from "@modelcontextprotocol/server";
 import { withToolErrorHandling } from "../../utils/tool-handler.js";
+import { cancelCollectionOperation, cancelCollectionOperationConfig } from "./cancel-collection-operation.js";
 import {
   checkCollectionIntegrity, checkCollectionIntegrityConfig, syncCollection, syncCollectionConfig,
   undoCollectionAction, undoCollectionActionConfig,
@@ -18,4 +19,5 @@ export function registerCollectionTools(server: McpServer): void {
   server.registerTool("check-collection-integrity", checkCollectionIntegrityConfig, withToolErrorHandling((input) => checkCollectionIntegrity(registry, input)));
   server.registerTool("undo-collection-action", undoCollectionActionConfig, withToolErrorHandling((input) => undoCollectionAction(registry, input)));
   server.registerTool("get-collection-operation", getCollectionOperationConfig, withToolErrorHandling((input) => getCollectionOperation(registry, input)));
+  server.registerTool("cancel-collection-operation", cancelCollectionOperationConfig, withToolErrorHandling((input) => cancelCollectionOperation(registry, input)));
 }

@@ -1,8 +1,9 @@
 import { randomBytes } from "node:crypto";
 import { AnkiRequestError } from "../../../anki-api/anki-request-error.js";
 import {
+  cancelOperationMethod,
   type CollectionContext, type CollectionOperationProposal, type CollectionOperationStatus,
-  readCollectionOperationStatus, startCollectionOperation, syncMethod,
+  readCollectionOperationStatus, requestCollectionOperationCancellation, requireCollectionV1, startCollectionOperation, syncMethod,
 } from "../../../anki-api/collection/collection-client.js";
 import { AnkiV1Error } from "../../../anki-api/v1/anki-v1-request.js";
 
@@ -20,6 +21,7 @@ type Receipt = {
   session: string;
   method: CollectionOperationProposal["method"];
   settled?: CollectionOperationStatus;
+  cancellation?: "sending" | "requested" | "uncertain";
 };
 type Phase = "idle" | "submitting" | "uncertain" | { operationId: string };
 
@@ -80,8 +82,7 @@ export class CollectionOperationRegistry {
   }
 
   async inspect(operationId: string) {
-    const receipt = this.#operations.get(operationId);
-    if (!receipt) throw new Error("Unknown collection operation. Use an operation ID returned by this running MCP server.");
+    const receipt = this.#getReceipt(operationId);
     if (receipt.settled === undefined) {
       let status: CollectionOperationStatus;
       try {
@@ -98,6 +99,40 @@ export class CollectionOperationRegistry {
       return { operationId, method: receipt.method, profile: receipt.profile, ...(receipt.settled ?? status) };
     }
     return { operationId, method: receipt.method, profile: receipt.profile, ...receipt.settled };
+  }
+
+  async cancel(operationId: string) {
+    requireCollectionV1(cancelOperationMethod);
+    const receipt = this.#getReceipt(operationId);
+    const result = { operationId, method: receipt.method, profile: receipt.profile };
+    if (receipt.settled?.state === "unknown") {
+      throw new Error("Anki no longer has this operation record. Inspect Anki; no cancellation was sent.");
+    }
+    if (receipt.settled !== undefined) return { ...result, requested: false };
+    if (receipt.cancellation !== undefined) {
+      throw new Error("A cancellation is in progress, was already requested, or could not be confirmed. Check get-collection-operation; no duplicate request was sent.");
+    }
+    receipt.cancellation = "sending";
+    try {
+      // Application-scoped: a busy or newly opened collection cannot block cancellation of its original operation.
+      const { requested } = await requestCollectionOperationCancellation(operationId);
+      if (requested) receipt.cancellation = "requested";
+      else delete receipt.cancellation;
+      return { ...result, requested };
+    } catch (error) {
+      if (error instanceof AnkiV1Error || (error instanceof AnkiRequestError && !error.mayHaveExecuted)) {
+        delete receipt.cancellation;
+        throw error;
+      }
+      receipt.cancellation = "uncertain";
+      throw new Error("Could not confirm the cancellation request. Anki may already have received it. No retry was performed; check get-collection-operation.", { cause: error });
+    }
+  }
+
+  #getReceipt(operationId: string): Receipt {
+    const receipt = this.#operations.get(operationId);
+    if (!receipt) throw new Error("Unknown collection operation. Use an operation ID returned by this running MCP server.");
+    return receipt;
   }
 }
 
