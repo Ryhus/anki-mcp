@@ -16,11 +16,8 @@ export function toNoteSummary(note: AnkiNoteInfo): NoteSummary {
     noteId: note.noteId,
     modelName: note.modelName,
     tags: [...note.tags],
-    fieldPreviews: Object.fromEntries(
-      Object.entries(sortFields(note.fields)).map(([name, field]) => [
-        name,
-        createFieldPreview(field.value),
-      ]),
+    fieldPreviews: toNoteFieldPreviews(
+      Object.entries(sortFields(note.fields)).map(([name, field]) => [name, field.value]),
     ),
     cardIds: [...note.cards],
     modifiedAt: new Date(note.mod * 1_000).toISOString(),
@@ -50,6 +47,10 @@ function sortFields(fields: AnkiNoteFields): AnkiNoteFields {
       ([, left], [, right]) => left.order - right.order,
     ),
   );
+}
+
+export function toNoteFieldPreviews(fields: Array<[string, string]>): Record<string, string> {
+  return Object.fromEntries(fields.map(([name, value]) => [name, createFieldPreview(value)]));
 }
 
 function createFieldPreview(value: string): string {

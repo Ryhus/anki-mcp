@@ -1,4 +1,6 @@
 import { invokeAnki } from "../anki-request.js";
+import { useAnkiV1 } from "../anki-api-mode.js";
+import { getV1NameMap } from "../v1/anki-v1-collection-client.js";
 import { findAnkiCards } from "../cards/card-client.js";
 import type {
   AnkiDeckStatsMap,
@@ -8,7 +10,8 @@ import type {
   DeckNameMap,
 } from "./deck-types.js";
 
-export function getDeckNameMap(): Promise<DeckNameMap> {
+export async function getDeckNameMap(): Promise<DeckNameMap> {
+  if (useAnkiV1("decks.list")) return getV1NameMap("decks.list");
   return invokeAnki<DeckNameMap>("deckNamesAndIds");
 }
 

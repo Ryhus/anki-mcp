@@ -1,4 +1,6 @@
 import { invokeAnki } from "../anki-request.js";
+import { useAnkiV1 } from "../anki-api-mode.js";
+import { getV1Tags } from "../v1/anki-v1-collection-client.js";
 import type {
   AnkiNoteDraft,
   AnkiNoteDraftValidation,
@@ -62,7 +64,8 @@ export async function removeAnkiNoteTags(
 }
 
 /** Gets all tags registered in the current Anki collection. */
-export function getAnkiTags(): Promise<string[]> {
+export async function getAnkiTags(): Promise<string[]> {
+  if (useAnkiV1("tags.list")) return getV1Tags();
   return invokeAnki<string[]>("getTags");
 }
 

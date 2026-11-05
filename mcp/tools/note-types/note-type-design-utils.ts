@@ -1,4 +1,6 @@
 import { createHash } from "node:crypto";
+import { useAnkiV1 } from "../../../anki-api/anki-api-mode.js";
+import { getV1NoteTypeDesign } from "../../../anki-api/v1/anki-v1-collection-client.js";
 import {
   getAnkiNoteTypeFieldNames,
   getAnkiNoteTypeNameMap,
@@ -18,6 +20,17 @@ export const NOTE_TYPE_SCOPE_WARNING =
 export async function loadNoteTypeDesign(
   modelName: string,
 ): Promise<NoteTypeDesign> {
+  if (useAnkiV1("noteTypes.get")) {
+    const { id, name, fields, css, templates: records } = await getV1NoteTypeDesign(modelName);
+    const templates = records.map(({ name, questionHtml, answerHtml }, order) => ({
+      name, order, front: questionHtml, back: answerHtml,
+    }));
+    return {
+      noteType: { id, name, fields: fields.map(({ name }, order) => ({ name, order })) },
+      css, templates, designHash: calculateNoteTypeDesignHash(css, templates),
+      scopeWarning: NOTE_TYPE_SCOPE_WARNING,
+    };
+  }
   const noteTypes = await getAnkiNoteTypeNameMap();
   const id = noteTypes[modelName];
 

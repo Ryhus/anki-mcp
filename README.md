@@ -32,6 +32,9 @@ Create a `.env` file in the repository root:
 ```dotenv
 ANKI_URL=http://127.0.0.1:8765
 
+# Optional: use API v1 for migrated reads (default: legacy).
+# ANKI_API_MODE=v1
+
 # Optional: queue wait + full AnkiConnect HTTP request deadline (milliseconds)
 # ANKI_REQUEST_TIMEOUT_MS=30000
 
@@ -43,6 +46,24 @@ ANKI_URL=http://127.0.0.1:8765
 without embedded URL credentials. API redirects are not followed. The example
 uses its usual local address; change it if your AnkiConnect instance uses a
 different host or port.
+
+`ANKI_API_MODE=v1` opts into the first stage of the
+[AnkiConnect API v1 migration](https://git.sr.ht/~foosoft/anki-connect/blob/master/API_V1.md).
+Keep `ANKI_URL` at the base endpoint, without `/api/v1`; the server appends
+that path for JSON-RPC calls. Both endpoints must be accessible on the same
+AnkiConnect installation. Set the variable in the MCP client's environment
+or in `.env`, then restart the MCP server. Without it, the default
+`legacy` mode continues to use version 6.
+
+In v1 mode, deck, note-type and tag listing use v1. Note-type design reads
+(including design verification) retrieve ordered fields, templates and CSS
+in one request. `search-notes` supports native cursor pages as described
+below. Other workflows, including every write, still use legacy actions
+for the steps that have not been migrated. MCP tool names and numeric IDs
+are unchanged; out-of-range upstream IDs are rejected rather than rounded.
+The two APIs share the same request limiter and timeout. A v1 failure does
+not trigger a fallback or retry. If the installed add-on does not serve
+v1, upgrade AnkiConnect or set the mode back to `legacy`.
 
 `ANKI_REQUEST_TIMEOUT_MS` is optional and defaults to **30,000 ms (30 seconds)**.
 It must be an integer from 1 to 300,000 ms; `0` does not disable the deadline.
@@ -636,6 +657,22 @@ applied.
   generated Cards. Applying requires a reviewed impact hash and confirmation;
   native searches verify the result.
 
+With `ANKI_API_MODE=v1`, pass `pagination: "cursor"` to `search-notes` for
+native paging:
+
+```json
+{"query":"deck:German tag:A1","pagination":"cursor","limit":20}
+```
+
+Continue sequentially with the same query and limit and set `cursor` to the
+previous result's `nextCursor`. A null `nextCursor` ends the search.
+In this mode, `total` and `offset` are null: AnkiConnect sends only the
+requested page of IDs and does not return an exact total. The page's detail
+read uses the same Anki collection session. Start a new search if a cursor
+expires, the profile changes, or a continuation fails after consuming its
+cursor. Without `pagination: "cursor"`, the original offset-based search
+and its exact total remain available in both API modes.
+
 #### Note creation outcomes
 
 `create-notes` keeps the existing input format and validates the entire batch
@@ -970,7 +1007,7 @@ Check that:
 - the AnkiConnect-compatible API is available;
 - `ANKI_URL` is present and points to the correct endpoint.
 
-Transport/configuration errors include a readable code:
+Connection and API errors include a readable code:
 
 | Code | Meaning / next check |
 | --- | --- |
@@ -981,10 +1018,12 @@ Transport/configuration errors include a readable code:
 | `ANKI_NETWORK_ERROR` | Connection/TLS failure or an interrupted body. Check Anki, AnkiConnect, the endpoint, and any reported network code. |
 | `ANKI_HTTP_ERROR` | Unexpected HTTP status, including redirects. Check the direct API URL, proxy, and authentication settings. |
 | `ANKI_INVALID_JSON` | The endpoint returned invalid JSON, for example an HTML login page. |
-| `ANKI_INVALID_RESPONSE` | JSON was not an AnkiConnect envelope, or `multi` replies were malformed/misaligned. |
+| `ANKI_INVALID_RESPONSE` | The AnkiConnect envelope, `multi` replies, or v1 response did not match the expected contract. |
+| `ANKI_V1_ERROR` | The v1 endpoint returned a JSON-RPC error. Inspect the stable error type and code; a stale cursor needs a fresh search. |
 
 Transport messages omit the endpoint, request parameters, raw response content,
-and native error causes. AnkiConnect's own action-level errors remain unchanged.
+and native error causes. Legacy action errors still include the AnkiConnect
+message; v1 errors expose only the method and stable error type/code.
 After a request was started, treat failure as an **unknown outcome**, especially
 for mutations or `multi`; inspect Anki instead of blindly repeating the action.
 

@@ -1,4 +1,6 @@
 import { invokeAnki } from "../anki-request.js";
+import { useAnkiV1 } from "../anki-api-mode.js";
+import { getV1NameMap } from "../v1/anki-v1-collection-client.js";
 import type {
   AnkiCreatedNoteType,
   AnkiCreateNoteTypeInput,
@@ -28,7 +30,8 @@ export function createAnkiNoteType({
 }
 
 /** Gets every Anki note type name and its numeric model ID. */
-export function getAnkiNoteTypeNameMap(): Promise<AnkiNoteTypeNameMap> {
+export async function getAnkiNoteTypeNameMap(): Promise<AnkiNoteTypeNameMap> {
+  if (useAnkiV1("noteTypes.list")) return getV1NameMap("noteTypes.list");
   return invokeAnki<AnkiNoteTypeNameMap>("modelNamesAndIds");
 }
 
