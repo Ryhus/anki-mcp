@@ -41,7 +41,7 @@ for (const version of ["2025-11-25", "2026-07-28"] as const) {
       await handle.close();
     });
     await client.connect(clientTransport);
-    assert.equal((await client.listTools()).tools.length, 62);
+    assert.equal((await client.listTools()).tools.length, 64);
     assert.equal(requests, 0);
     for (const [kind, code] of [
       ["timeout", "ANKI_TIMEOUT"], ["http", "ANKI_HTTP_ERROR"],

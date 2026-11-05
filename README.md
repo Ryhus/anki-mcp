@@ -40,6 +40,10 @@ ANKI_URL=http://127.0.0.1:8765
 
 # Optional: ":"-separated on macOS/Linux and ";"-separated on Windows
 # ANKI_MEDIA_IMPORT_DIRS=/absolute/path/to/media
+
+# Optional: opt in to local .apkg import and export separately.
+# ANKI_PACKAGE_IMPORT_DIR=/absolute/path/to/imports
+# ANKI_PACKAGE_EXPORT_DIR=/absolute/path/to/exports
 ```
 
 `ANKI_URL` must point directly to the HTTP(S) endpoint exposed by AnkiConnect,
@@ -105,6 +109,12 @@ and hash where the tool requires them.
 `localPath` sources only when their resolved path is inside one of these
 directories. Local file imports are disabled when the variable is omitted.
 Base64 and public HTTPS sources do not require it.
+
+`ANKI_PACKAGE_IMPORT_DIR` and `ANKI_PACKAGE_EXPORT_DIR` independently enable
+the deck package tools. Each must point to an existing, trusted absolute
+directory. MCP and AnkiConnect must run on the same machine with access to
+the same filesystem paths. These tools accept only local loopback endpoints
+and require `ANKI_API_MODE=v1`.
 
 ## Development commands
 
@@ -619,6 +629,40 @@ may already be deleted. No automatic retry, MCP backup, or rollback is provided.
 Inspect Anki before retrying. Read/compare/delete is not atomic, and concurrent
 changes after the final read can still race. The hash and confirmation flag
 are not authentication or proof of human approval.
+
+### Deck packages (v1)
+
+Both package tools default to `dryRun: true`. They handle local deck packages
+(`.apkg`), not full-collection backup/restore (`.colpkg` or `collection.apkg`).
+
+- `export-deck-package` previews one normal deck and its subdecks by ID from
+  `list-decks`. For example, pass
+  `{"deckId":1234567890123,"fileName":"German.apkg"}`. Scheduling and review
+  history are excluded unless `includeScheduling: true`; Anki includes
+  referenced local media, but not deck presets. Apply with `dryRun: false`,
+  `confirmExport: true`, and the reviewed `expectedImpactHash`. Each export
+  writes into a newly created subdirectory of `ANKI_PACKAGE_EXPORT_DIR`,
+  never over an existing package. The result gives the verified file path,
+  byte size, and SHA-256. Preview reviews the deck scope, not a snapshot of
+  all card contents.
+- `import-deck-package` previews a trusted file inside
+  `ANKI_PACKAGE_IMPORT_DIR`, for example
+  `{"localPath":"/absolute/path/to/imports/German.apkg"}`. The file must be a
+  regular file, at most 512 MiB. Preview checks its ZIP header and SHA-256
+  and identifies the active profile; it does not parse the archive or predict
+  an import diff. Apply with `dryRun: false`, `confirmImport: true`, and the
+  reviewed `expectedImpactHash`. The tool rechecks the fingerprint, then
+  imports a private temporary copy of the reviewed bytes. Anki may update
+  existing notes and merge Note Types. This API imports scheduling and deck
+  presets if present and does not allow disabling those options. Do not use
+  a renamed collection backup or untrusted file.
+
+Both tools wait for AnkiConnect's native operation to finish. Import reports
+completion, not per-note results. No automatic retry, collection backup, or
+rollback is provided. On an unconfirmed outcome, Anki may still be working;
+inspect it before retrying. A private import copy or partial export may be
+retained at the path reported in the error. These tools do not upload or
+share packages.
 
 ### Note type tools
 

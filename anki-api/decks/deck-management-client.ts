@@ -22,7 +22,7 @@ export async function openDeckManagement(method: string): Promise<DeckManagement
   return { ...ctx, profile: ctx.profile };
 }
 
-export async function listManagedDecks(ctx: DeckManagementContext): Promise<ManagedDeck[]> {
+export async function listManagedDecks(ctx: V1AdapterContext): Promise<ManagedDeck[]> {
   const method = "decks.list";
   const decks = await ctx.request(method, {}, z.array(managedDeckSchema));
   if (new Set(decks.map(({ id }) => id)).size !== decks.length ||
