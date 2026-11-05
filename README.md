@@ -32,7 +32,7 @@ Create a `.env` file in the repository root:
 ```dotenv
 ANKI_URL=http://127.0.0.1:8765
 
-# Optional: use API v1 for migrated reads (default: legacy).
+# Optional: use API v1 for migrated operations (default: legacy).
 # ANKI_API_MODE=v1
 
 # Optional: queue wait + full AnkiConnect HTTP request deadline (milliseconds)
@@ -47,7 +47,7 @@ without embedded URL credentials. API redirects are not followed. The example
 uses its usual local address; change it if your AnkiConnect instance uses a
 different host or port.
 
-`ANKI_API_MODE=v1` opts into the first stage of the
+`ANKI_API_MODE=v1` opts into the available stages of the
 [AnkiConnect API v1 migration](https://git.sr.ht/~foosoft/anki-connect/blob/master/API_V1.md).
 Keep `ANKI_URL` at the base endpoint, without `/api/v1`; the server appends
 that path for JSON-RPC calls. Both endpoints must be accessible on the same
@@ -57,9 +57,10 @@ or in `.env`, then restart the MCP server. Without it, the default
 
 In v1 mode, deck, note-type and tag listing use v1. Note-type design reads
 (including design verification) retrieve ordered fields, templates and CSS
-in one request. `search-notes` supports native cursor pages as described
-below. Other workflows, including every write, still use legacy actions
-for the steps that have not been migrated. MCP tool names and numeric IDs
+in one request. `search-notes` defaults to native cursor pages and
+`update-note-fields` reads and writes through v1 in one collection session
+per invocation. Other workflows still use legacy actions for steps that
+have not been migrated. MCP tool names and numeric IDs
 are unchanged; out-of-range upstream IDs are rejected rather than rounded.
 The two APIs share the same request limiter and timeout. A v1 failure does
 not trigger a fallback or retry. If the installed add-on does not serve
@@ -657,11 +658,11 @@ applied.
   generated Cards. Applying requires a reviewed impact hash and confirmation;
   native searches verify the result.
 
-With `ANKI_API_MODE=v1`, pass `pagination: "cursor"` to `search-notes` for
-native paging:
+With `ANKI_API_MODE=v1`, ordinary `search-notes` calls use native cursor
+paging by default:
 
 ```json
-{"query":"deck:German tag:A1","pagination":"cursor","limit":20}
+{"query":"deck:German tag:A1","limit":20}
 ```
 
 Continue sequentially with the same query and limit and set `cursor` to the
@@ -670,8 +671,9 @@ In this mode, `total` and `offset` are null: AnkiConnect sends only the
 requested page of IDs and does not return an exact total. The page's detail
 read uses the same Anki collection session. Start a new search if a cursor
 expires, the profile changes, or a continuation fails after consuming its
-cursor. Without `pagination: "cursor"`, the original offset-based search
-and its exact total remain available in both API modes.
+cursor. Use `pagination: "offset"` for an exact total, or supply an explicit
+`offset` (including 0) to select offset mode when pagination is omitted.
+Legacy mode defaults to offset and does not support native cursors.
 
 #### Note creation outcomes
 
@@ -771,6 +773,13 @@ Each submitted field replaces its complete value. Preserve any existing HTML
 or media markup that should remain; unspecified fields are untouched. A hash
 check detects changes since the read or preview, but cannot judge whether the
 proposed replacement preserves the intended content.
+
+With `ANKI_API_MODE=v1`, this tool passes the same collection session to
+`notes.getMany`, each `notes.update`, and the verification read. If the
+profile changes during a tool call, a stale-session error stops the
+remaining steps without falling back to a legacy write. A preview and a
+later apply are separate calls: the apply still checks the field hashes
+against current values. Media attachment and detachment are unchanged.
 
 The preflight check and subsequent writes are separate AnkiConnect calls, not
 an atomic transaction. A concurrent edit in that interval remains possible.

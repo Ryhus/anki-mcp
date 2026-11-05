@@ -1,5 +1,4 @@
-import { updateAnkiNoteFields } from "../../../anki-api/notes/note-client.js";
-import type { AnkiNoteInfo } from "../../../anki-api/notes/note-types.js";
+import type { NoteFieldAccess, NoteFieldSnapshot } from "./note-field-access.js";
 import {
   calculateNoteFieldHash,
   canonicalizeFields,
@@ -9,7 +8,6 @@ import type {
   RejectedNoteFieldUpdate,
   UpdateNoteFieldsInput,
 } from "./note-field-update-schemas.js";
-import { loadNotes } from "./note-loader.js";
 
 const FIELD_CHANGE_PREVIEW_LIMIT = 1_000;
 
@@ -21,7 +19,7 @@ export interface PreparedNoteFieldUpdate {
 /** Validates field names and expected versions for the complete batch. */
 export function prepareNoteFieldUpdates(
   { updates, dryRun }: UpdateNoteFieldsInput,
-  notes: AnkiNoteInfo[],
+  notes: NoteFieldSnapshot[],
 ): {
   preparedUpdates: PreparedNoteFieldUpdate[];
   changes: NoteFieldChange[];
@@ -122,6 +120,7 @@ export function prepareNoteFieldUpdates(
 /** Writes prepared patches, then confirms exact values without automatic retries. */
 export async function applyAndVerifyNoteFieldUpdates(
   updates: PreparedNoteFieldUpdate[],
+  access: NoteFieldAccess,
 ): Promise<void> {
   if (updates.length === 0) {
     return;
@@ -130,7 +129,7 @@ export async function applyAndVerifyNoteFieldUpdates(
   const acknowledgedNoteIds: number[] = [];
   for (const update of updates) {
     try {
-      await updateAnkiNoteFields({ id: update.noteId, fields: update.fields });
+      await access.write({ id: update.noteId, fields: update.fields });
       acknowledgedNoteIds.push(update.noteId);
     } catch (error) {
       throw new Error(
@@ -141,7 +140,7 @@ export async function applyAndVerifyNoteFieldUpdates(
   }
 
   try {
-    const { notes, missingNoteIds } = await loadNotes(acknowledgedNoteIds);
+    const { notes, missingNoteIds } = await access.read(acknowledgedNoteIds);
     const notesById = new Map(notes.map((note) => [note.noteId, note]));
     const mismatches: string[] = [];
 

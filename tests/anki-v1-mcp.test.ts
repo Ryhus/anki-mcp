@@ -84,7 +84,7 @@ for (const version of ["2025-11-25", "2026-07-28"] as const) {
     const tags = await client.callTool({ name: "list-tags" });
     assert.deepEqual(tags.structuredContent, { prefix: "", total: 1, offset: 0, returned: 1, hasMore: false, tags: ["noun"] });
 
-    const input = { query: "", limit: 2, pagination: "cursor" };
+    const input = { query: "", limit: 2 };
     const first = await client.callTool({ name: "search-notes", arguments: input });
     assert.notEqual(first.isError, true);
     const note = {
@@ -109,22 +109,31 @@ for (const version of ["2025-11-25", "2026-07-28"] as const) {
     assert.match(JSON.stringify(stale.content), /staleCursor/u);
     assert.deepEqual(calls.slice(beforeStale), ["collection.get", "notes.search"]);
 
-    const offset = await client.callTool({ name: "search-notes", arguments: { query: "", limit: 1 } });
-    assert.deepEqual(offset.structuredContent, {
-      query: "", total: 3, offset: 0, returned: 1, hasMore: true, notes: [note], missingNoteIds: [],
-    });
-    assert.deepEqual(calls.slice(-2), ["findNotes", "notesInfo"]);
+    for (const paginationArgs of [{ pagination: "offset" }, { offset: 0 }]) {
+      const offset = await client.callTool({ name: "search-notes", arguments: { query: "", limit: 1, ...paginationArgs } });
+      assert.deepEqual(offset.structuredContent, {
+        query: "", total: 3, offset: 0, returned: 1, hasMore: true, notes: [note], missingNoteIds: [],
+      });
+      assert.deepEqual(calls.slice(-2), ["findNotes", "notesInfo"]);
+    }
     const created = await client.callTool({ name: "create-deck", arguments: { name: "Fixture" } });
     assert.deepEqual(created.structuredContent, { deck: { id: 2, name: "Fixture" }, created: true });
     assert.deepEqual(calls.slice(-2), ["decks.list", "createDeck"]);
 
     const beforeInvalid = calls.length;
-    const conflict = await client.callTool({ name: "search-notes", arguments: { ...input, offset: 1 } });
+    const conflict = await client.callTool({ name: "search-notes", arguments: { ...input, pagination: "cursor", offset: 1 } });
     assert.equal(conflict.isError, true);
+    const mixed = await client.callTool({ name: "search-notes", arguments: { ...input, cursor: "next-page", offset: 0 } });
+    assert.equal(mixed.isError, true);
     process.env.ANKI_API_MODE = "legacy";
-    const disabled = await client.callTool({ name: "search-notes", arguments: input });
+    const disabled = await client.callTool({ name: "search-notes", arguments: { ...input, pagination: "cursor" } });
     assert.equal(disabled.isError, true);
     assert.match(JSON.stringify(disabled.content), /requires ANKI_API_MODE=v1/u);
     assert.equal(calls.length, beforeInvalid);
+    const legacy = await client.callTool({ name: "search-notes", arguments: { query: "", limit: 1 } });
+    assert.deepEqual(legacy.structuredContent, {
+      query: "", total: 3, offset: 0, returned: 1, hasMore: true, notes: [note], missingNoteIds: [],
+    });
+    assert.deepEqual(calls.slice(beforeInvalid), ["findNotes", "notesInfo"]);
   });
 }

@@ -37,6 +37,12 @@ export function getV1Tags(): Promise<string[]> {
   return callAnkiV1("tags.list", {}, z.array(z.string()));
 }
 
+/** Capture an Anki collection session so related requests cannot cross profiles. */
+export async function getV1CollectionSession(): Promise<string> {
+  const { session } = await callAnkiV1("collection.get", {}, z.object({ session: z.string().min(1) }));
+  return session;
+}
+
 /** Gets an ordered field/template snapshot and its CSS in a single exchange. */
 export async function getV1NoteTypeDesign(modelName: string) {
   const method = "noteTypes.get";

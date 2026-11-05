@@ -1,6 +1,7 @@
 import type { CallToolResult } from "@modelcontextprotocol/server";
 import { DESTRUCTIVE_TOOL_ANNOTATIONS } from "../../utils/tool-annotations.js";
 import { createToolResult } from "../../utils/tool-result.js";
+import { openNoteFieldAccess } from "./note-field-access.js";
 import {
   updateNoteFieldsInputSchema,
   updateNoteFieldsOutputSchema,
@@ -10,7 +11,6 @@ import {
   applyAndVerifyNoteFieldUpdates,
   prepareNoteFieldUpdates,
 } from "./note-field-update-utils.js";
-import { loadNotes } from "./note-loader.js";
 
 export const updateNoteFieldsConfig = {
   title: "Update note fields",
@@ -25,7 +25,8 @@ export const updateNoteFieldsConfig = {
 export async function updateNoteFields(
   input: UpdateNoteFieldsInput,
 ): Promise<CallToolResult> {
-  const { notes, missingNoteIds } = await loadNotes(
+  const access = await openNoteFieldAccess();
+  const { notes, missingNoteIds } = await access.read(
     input.updates.map(({ noteId }) => noteId),
   );
   const { preparedUpdates, changes, unchangedNoteIds, rejectedUpdates } =
@@ -56,7 +57,7 @@ export async function updateNoteFields(
     );
   }
 
-  await applyAndVerifyNoteFieldUpdates(preparedUpdates);
+  await applyAndVerifyNoteFieldUpdates(preparedUpdates, access);
 
   return createToolResult(
     `Updated and verified ${preparedUpdates.length} note(s); ${unchangedNoteIds.length} already contained the requested field values.`,

@@ -21,11 +21,12 @@ const searchNotesInputSchema = z.object({
     .describe(
       'Native Anki search query, for example "deck:German tag:A1", "note:Basic", or "Front:*Hund*". An empty query searches all notes.',
     ),
-  pagination: z.enum(["offset", "cursor"]).default("offset")
-    .describe("Use cursor for a native page with ANKI_API_MODE=v1; offset preserves the exact total and legacy behavior."),
+  pagination: z.enum(["offset", "cursor"]).optional()
+    .describe("Defaults to cursor when v1 is enabled and no offset is supplied. Use offset when an exact total or numeric position is needed."),
   cursor: z.string().min(1).max(4_096).optional()
     .describe("Use the previous nextCursor with the same query and limit. Omit it on the first cursor page."),
-  offset: z.number().int().nonnegative().default(0),
+  offset: z.number().int().nonnegative().optional()
+    .describe("Numeric position in offset mode. Supplying an offset, even 0, selects offset mode unless pagination is explicit."),
   limit: z
     .number()
     .int()
@@ -33,10 +34,10 @@ const searchNotesInputSchema = z.object({
     .max(NOTE_SEARCH_LIMIT)
     .default(20),
 }).superRefine(({ pagination, cursor, offset }, context) => {
-  if (cursor !== undefined && pagination !== "cursor") {
-    context.addIssue({ code: "custom", path: ["cursor"], message: "cursor requires pagination: cursor" });
+  if (cursor !== undefined && (pagination === "offset" || (pagination === undefined && offset !== undefined))) {
+    context.addIssue({ code: "custom", path: ["cursor"], message: "Cannot combine a continuation cursor with offset pagination" });
   }
-  if (pagination === "cursor" && offset !== 0) {
+  if (pagination === "cursor" && (offset ?? 0) !== 0) {
     context.addIssue({ code: "custom", path: ["offset"], message: "Cursor pagination does not accept a nonzero offset" });
   }
 });
@@ -46,7 +47,7 @@ type SearchNotesInput = z.infer<typeof searchNotesInputSchema>;
 export const searchNotesConfig = {
   title: "Search notes",
   description:
-    "Searches notes with Anki's native query syntax. Offset mode includes the exact count. With ANKI_API_MODE=v1, cursor mode returns one native page with a continuation cursor instead.",
+    "Searches notes with Anki's native query syntax. In v1 mode, defaults to a native page with a continuation cursor. Request pagination: offset for an exact total or a numeric position.",
   inputSchema: searchNotesInputSchema,
   outputSchema: z.object({
     query: z.string(),
@@ -66,11 +67,13 @@ export async function searchNotes({
   query,
   pagination,
   cursor,
-  offset,
+  offset: requestedOffset,
   limit,
 }: SearchNotesInput): Promise<CallToolResult> {
-  if (pagination === "cursor") {
-    if (!useAnkiV1("notes.search")) {
+  const v1 = useAnkiV1("notes.search");
+  const mode = pagination ?? (cursor !== undefined || (v1 && requestedOffset === undefined) ? "cursor" : "offset");
+  if (mode === "cursor") {
+    if (!v1) {
       throw new AnkiRequestError(
         "configuration", "notes.search", "Cursor pagination requires ANKI_API_MODE=v1.", false,
       );
@@ -92,6 +95,7 @@ export async function searchNotes({
       },
     );
   }
+  const offset = requestedOffset ?? 0;
   const matchingNoteIds = await findAnkiNotes(query);
   const pageNoteIds = matchingNoteIds.slice(offset, offset + limit);
   const { notes: loadedNotes, missingNoteIds } =
