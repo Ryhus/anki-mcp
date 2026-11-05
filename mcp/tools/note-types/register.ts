@@ -33,6 +33,7 @@ import {
   getNoteTypeSchemaConfig,
 } from "./get-note-type-schema.js";
 import { listNoteTypes, listNoteTypesConfig } from "./list-note-types.js";
+import { renameNoteType, renameNoteTypeConfig } from "./rename-note-type.js";
 import {
   renameNoteTypeField,
   renameNoteTypeFieldConfig,
@@ -84,6 +85,11 @@ export function registerNoteTypeTools(server: McpServer): void {
     "create-note-type",
     createNoteTypeConfig,
     withToolErrorHandling(createNoteType),
+  );
+  server.registerTool(
+    "rename-note-type",
+    renameNoteTypeConfig,
+    withToolErrorHandling(renameNoteType),
   );
   server.registerTool(
     "add-note-type-field",
