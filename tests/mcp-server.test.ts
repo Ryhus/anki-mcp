@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { readFileSync } from "node:fs";
 import { Client } from "@modelcontextprotocol/client";
 import { InMemoryTransport, ProtocolError } from "@modelcontextprotocol/server";
 import type { JsonSchemaType } from "@modelcontextprotocol/server";
@@ -11,6 +12,10 @@ import { getMediaFileConfig } from "../mcp/tools/media/get-media-file.js";
 import { createNoteTypeConfig } from "../mcp/tools/note-types/create-note-type.js";
 import { getNoteDetailsConfig } from "../mcp/tools/notes/get-note-details.js";
 import { updateNoteFieldsConfig } from "../mcp/tools/notes/update-note-fields.js";
+
+const packageVersion = (JSON.parse(
+  readFileSync(new URL("../package.json", import.meta.url), "utf8"),
+) as { version: string }).version;
 
 const EXPECTED_TOOLS = [
   "list-decks", "create-deck", "rename-deck", "get-deck-stats", "get-card-decks",
@@ -112,6 +117,7 @@ for (const version of ["2025-11-25", "2026-07-28"] as const) {
     assert.equal(client.getNegotiatedProtocolVersion(), version);
     assert.equal(client.getProtocolEra(), modern ? "modern" : "legacy");
     assert.equal(client.getServerVersion()?.name, "anki-mcp-server");
+    assert.equal(client.getServerVersion()?.version, packageVersion);
 
     const { tools } = await client.listTools();
     assert.deepEqual(tools.map(({ name }) => name).sort(), EXPECTED_TOOLS);

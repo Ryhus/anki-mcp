@@ -1,0 +1,62 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.Ryhus/anki-mcp",
+  "title": "Anki MCP",
+  "description": "Manage local Anki notes, cards, decks, note types, media, and deck packages via AnkiConnect.",
+  "version": "0.1.1",
+  "repository": {
+    "url": "https://github.com/Ryhus/anki-mcp",
+    "source": "github",
+    "id": "1310283611"
+  },
+  "websiteUrl": "https://github.com/Ryhus/anki-mcp#readme",
+  "packages": [
+    {
+      "registryType": "npm",
+      "registryBaseUrl": "https://registry.npmjs.org",
+      "identifier": "@ryhus/anki-mcp",
+      "version": "0.1.1",
+      "runtimeHint": "npx",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "ANKI_URL",
+          "description": "AnkiConnect base URL on your computer. Keep Anki Desktop open; omit /api/v1.",
+          "default": "http://127.0.0.1:8765",
+          "format": "string",
+          "isRequired": true
+        },
+        {
+          "name": "ANKI_API_MODE",
+          "description": "Use v1 for the full tool set with compatible AnkiConnect, or legacy for older add-ons.",
+          "default": "v1",
+          "choices": ["v1", "legacy"],
+          "format": "string"
+        },
+        {
+          "name": "ANKI_REQUEST_TIMEOUT_MS",
+          "description": "Request deadline in integer milliseconds, including queue wait: 1 to 300000.",
+          "default": "30000",
+          "format": "number"
+        },
+        {
+          "name": "ANKI_MEDIA_IMPORT_DIRS",
+          "description": "Optional trusted local media folders. Separate with : on macOS/Linux or ; on Windows.",
+          "format": "string"
+        },
+        {
+          "name": "ANKI_PACKAGE_IMPORT_DIR",
+          "description": "Optional existing absolute folder for local .apkg imports. Requires API v1.",
+          "format": "filepath"
+        },
+        {
+          "name": "ANKI_PACKAGE_EXPORT_DIR",
+          "description": "Optional existing absolute folder for local .apkg exports. Requires API v1.",
+          "format": "filepath"
+        }
+      ]
+    }
+  ]
+}
