@@ -1,0 +1,5 @@
+{
+  "extends": "./tsconfig.json",
+  "include": ["anki-api/**/*", "mcp/**/*"],
+  "exclude": ["dist", "node_modules", "tests"]
+}
