@@ -4,11 +4,21 @@ on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Approved npm release tag, for example v0.1.1
+        required: true
+        type: string
+      staging_run_id:
+        description: Successful staging workflow run ID
+        required: true
+        type: string
 
 permissions:
   contents: read
 
-# Serialize releases so two different versions cannot race to update npm's latest tag.
+# Serialize staging and completion runs; no runner waits for human npm approval.
 concurrency:
   group: publish-${{ github.repository }}
   cancel-in-progress: false
@@ -16,7 +26,7 @@ concurrency:
 jobs:
   build:
     name: Validate release
-    if: github.repository == 'Ryhus/anki-mcp'
+    if: github.event_name == 'push' && github.repository == 'Ryhus/anki-mcp'
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
@@ -70,12 +80,13 @@ jobs:
           path: ${{ runner.temp }}/anki-mcp-package/
           if-no-files-found: error
           compression-level: 0
-          retention-days: 7
+          retention-days: 30
           overwrite: true
 
-  publish:
-    name: Publish to npm and MCP Registry
+  stage:
+    name: Stage npm package
     needs: build
+    if: github.event_name == 'push' && github.repository == 'Ryhus/anki-mcp'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -117,15 +128,96 @@ jobs:
         id: registry
         run: node scripts/release.ts preflight "$RUNNER_TEMP/anki-mcp-package"
 
-      - name: Publish tested archive to npm with OIDC
+      - name: Stage tested archive with OIDC for human approval
         if: steps.registry.outputs.npm_exists == 'false'
         run: >-
-          npm publish "$RUNNER_TEMP/anki-mcp-package/package.tgz"
+          npm stage publish "$RUNNER_TEMP/anki-mcp-package/package.tgz"
           --access public --tag latest --ignore-scripts
-          --fetch-retries=0 --fetch-timeout=30000
+          --fetch-retries=0 --fetch-timeout=30000 --json
+          > "$RUNNER_TEMP/stage-result.json"
+
+      - name: Verify an already-approved npm version
+        if: steps.registry.outputs.npm_exists == 'true'
+        run: node scripts/release.ts verify-npm "$RUNNER_TEMP/anki-mcp-package"
+
+      - name: Summarize npm approval and completion steps
+        env:
+          NPM_EXISTS: ${{ steps.registry.outputs.npm_exists }}
+          RELEASE_TAG: ${{ github.ref_name }}
+          STAGING_RUN_ID: ${{ github.run_id }}
+        run: >-
+          node scripts/staged-release.ts summarize
+          "$RUNNER_TEMP/stage-result.json"
+          "$RUNNER_TEMP/anki-mcp-package/package-info.json"
+
+  complete:
+    name: Complete approved release in MCP Registry
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      github.repository == 'Ryhus/anki-mcp' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+    env:
+      RELEASE_TAG: ${{ inputs.release_tag }}
+      STAGING_RUN_ID: ${{ inputs.staging_run_id }}
+
+    steps:
+      - name: Checkout trusted workflow helpers
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+
+      - name: Validate completion inputs
+        run: node scripts/staged-release.ts validate-inputs
+
+      - name: Checkout the original release tag
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ inputs.release_tag }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Require the approved release commit on main
+        run: |
+          git merge-base --is-ancestor HEAD origin/main
+          node scripts/release.ts validate "$RELEASE_TAG"
+
+      - name: Verify the original successful staging run
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/staged-release.ts check-run
+
+      - name: Download the original tested archive
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: npm-package
+          path: ${{ runner.temp }}/anki-mcp-package
+          run-id: ${{ inputs.staging_run_id }}
+          github-token: ${{ github.token }}
+
+      - name: Require an approved matching npm version
+        id: registry
+        run: node scripts/release.ts preflight-approved "$RUNNER_TEMP/anki-mcp-package"
 
       - name: Verify anonymous npm download and metadata
         run: node scripts/release.ts verify-npm "$RUNNER_TEMP/anki-mcp-package"
+
+      - name: Set up MCP publisher
+        uses: ./.github/actions/setup-mcp-publisher
+
+      - name: Validate MCP Registry schema
+        run: mcp-publisher validate server.json
 
       - name: Authenticate to MCP Registry with OIDC
         if: steps.registry.outputs.mcp_exists == 'false'
