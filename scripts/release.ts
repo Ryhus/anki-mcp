@@ -211,6 +211,16 @@ export async function preflight(
   return { npm_exists: npm !== null, mcp_exists: mcp };
 }
 
+/** A staged (non-public) package must never unlock MCP Registry publication. */
+export async function approvedPreflight(
+  metadata: ReleaseMetadata, integrity: string, fetcher: Fetch = fetch,
+): Promise<{ npm_exists: boolean; mcp_exists: boolean }> {
+  const result = await preflight(metadata, integrity, fetcher);
+  assert.ok(result.npm_exists,
+    "npm version is not public. Approve the staged package with 2FA, then run completion again.");
+  return result;
+}
+
 export async function verifyNpmDownload(
   metadata: ReleaseMetadata, integrity: string, fetcher: Fetch = fetch,
 ): Promise<boolean> {
@@ -249,11 +259,11 @@ async function main(): Promise<void> {
   } else if (command === "pack") {
     assert.ok(argument, "Artifact directory is required");
     await packRelease(metadata, argument);
-  } else if (command === "preflight" || command === "verify-npm") {
+  } else if (command === "preflight" || command === "preflight-approved" || command === "verify-npm") {
     assert.ok(argument, "Artifact directory is required");
     const report = await loadArchive(metadata, argument);
-    if (command === "preflight") {
-      const result = await preflight(metadata, report.integrity);
+    if (command !== "verify-npm") {
+      const result = await (command === "preflight-approved" ? approvedPreflight : preflight)(metadata, report.integrity);
       console.log(JSON.stringify(result));
       if (process.env.GITHUB_OUTPUT) {
         await appendFile(process.env.GITHUB_OUTPUT,
@@ -267,7 +277,7 @@ async function main(): Promise<void> {
     await waitForPublication(() => checkMcpVersion(metadata));
     console.log("MCP Registry metadata and active status verified.");
   } else {
-    throw new Error("Usage: node scripts/release.ts <validate [tag]|pack dir|preflight dir|verify-npm dir|verify-mcp>");
+    throw new Error("Usage: node scripts/release.ts <validate [tag]|pack dir|preflight dir|preflight-approved dir|verify-npm dir|verify-mcp>");
   }
 }
 

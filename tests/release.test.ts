@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  archiveIntegrity, checkLatestVersion, checkMcpVersion, checkNpmVersion,
+  approvedPreflight, archiveIntegrity, checkLatestVersion, checkMcpVersion, checkNpmVersion,
   loadReleaseMetadata, MCP_REGISTRY, NPM_REGISTRY, parsePackReport, preflight,
   validateArchive, validateReleaseMetadata, verifyNpmDownload, waitForPublication,
 } from "../scripts/release.js";
@@ -124,6 +124,20 @@ test("partial release resumes npm only when its existing bytes match", async () 
   const routes = { [versionUrl]: publishedNpm, [mcpUrl]: new Response(null, { status: 404 }), [npmUrl]: index };
   assert.deepEqual(await preflight(metadata, integrity, registryFetch(routes)), { npm_exists: true, mcp_exists: false });
   await assert.rejects(preflight(metadata, "different-hash", registryFetch(routes)), /different bytes/u);
+});
+
+test("MCP completion requires the matching npm version to be public, not merely staged", async () => {
+  const pending = registryFetch({
+    [versionUrl]: new Response(null, { status: 404 }),
+    [mcpUrl]: new Response(null, { status: 404 }),
+    [npmUrl]: { versions: {}, "dist-tags": { latest: "0.1.0" } },
+  });
+  await assert.rejects(approvedPreflight(metadata, integrity, pending), /Approve the staged package with 2FA/u);
+  const approved = registryFetch({
+    [versionUrl]: publishedNpm, [mcpUrl]: new Response(null, { status: 404 }), [npmUrl]: index,
+  });
+  assert.deepEqual(await approvedPreflight(metadata, integrity, approved), { npm_exists: true, mcp_exists: false });
+  await assert.rejects(approvedPreflight(metadata, "wrong-integrity", approved), /different bytes/u);
 });
 
 test("completed release can be rerun without writes, even after a newer latest", async () => {
