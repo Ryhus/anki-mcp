@@ -23,7 +23,7 @@ Anki MCP so your assistant can use the Anki tools.
   "mcpServers": {
     "anki": {
       "command": "npx",
-      "args": ["--yes", "--package=@ryhus/anki-mcp@0.1.0", "anki-mcp"],
+      "args": ["--yes", "--prefer-online", "--package=@ryhus/anki-mcp@latest", "anki-mcp"],
       "env": {
         "ANKI_URL": "http://127.0.0.1:8765",
         "ANKI_API_MODE": "v1"
@@ -33,11 +33,15 @@ Anki MCP so your assistant can use the Anki tools.
 }
 ```
 
-If your client has a form, put only `npx` in **Command**, enter the three
+If your client has a form, put only `npx` in **Command**, enter the four
 **Arguments** separately, and add the two **Environment variables** shown
 above. `ANKI_URL` is the AnkiConnect address, not a remote MCP URL.
 
 Reload the client and ask: **“List my Anki decks without changing anything.”**
+
+`@latest` checks for the current release when the server starts; it does not
+update a running server. To control updates yourself, replace `@latest` with
+an exact published version, for example `@0.1.0`.
 
 ## Try it
 
@@ -67,7 +71,7 @@ after an error, check Anki before repeating the action.
   client's PATH. On Windows, use `npx.cmd` if your client needs the shim.
 - **Anki is unreachable:** check that Anki is open and AnkiConnect is enabled.
   Use the base address in `ANKI_URL` without `/api/v1`.
-- **The package is not found:** check that the pinned version has been
+- **The package is not found:** check that the requested version has been
   published and that your client can reach the npm registry.
 
 [MIT License](LICENSE).

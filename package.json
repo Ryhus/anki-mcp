@@ -1,6 +1,7 @@
 {
   "name": "@ryhus/anki-mcp",
-  "version": "0.1.0",
+  "version": "0.1.1",
+  "mcpName": "io.github.Ryhus/anki-mcp",
   "description": "An MCP server for interacting with Anki through AnkiConnect",
   "homepage": "https://github.com/Ryhus/anki-mcp#readme",
   "repository": {
@@ -29,6 +30,7 @@
     "start": "node dist/mcp/server.js",
     "test": "tsx --test tests/*.test.ts",
     "typecheck": "tsc --noEmit",
+    "release:check": "node scripts/release.ts validate",
     "prepublishOnly": "npm test && npm run typecheck && npm run build"
   },
   "keywords": [

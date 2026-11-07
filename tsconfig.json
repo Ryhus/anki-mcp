@@ -21,6 +21,6 @@
     "moduleDetection": "force",
     "skipLibCheck": true
   },
-  "include": ["anki-api/**/*", "mcp/**/*", "tests/**/*"],
+  "include": ["anki-api/**/*", "mcp/**/*", "scripts/**/*", "tests/**/*"],
   "exclude": ["dist", "node_modules"]
 }
