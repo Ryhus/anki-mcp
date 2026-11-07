@@ -2,6 +2,14 @@
   "name": "@ryhus/anki-mcp",
   "version": "0.1.0",
   "description": "An MCP server for interacting with Anki through AnkiConnect",
+  "homepage": "https://github.com/Ryhus/anki-mcp#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Ryhus/anki-mcp.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Ryhus/anki-mcp/issues"
+  },
   "main": "dist/mcp/server.js",
   "bin": {
     "anki-mcp": "dist/mcp/server.js"
