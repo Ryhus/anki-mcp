@@ -1,6 +1,6 @@
 {
   "name": "@ryhus/anki-mcp",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "mcpName": "io.github.Ryhus/anki-mcp",
   "description": "An MCP server for interacting with Anki through AnkiConnect",
   "homepage": "https://github.com/Ryhus/anki-mcp#readme",

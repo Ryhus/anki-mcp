@@ -3,7 +3,7 @@
   "name": "io.github.Ryhus/anki-mcp",
   "title": "Anki MCP",
   "description": "Manage local Anki notes, cards, decks, note types, media, and deck packages via AnkiConnect.",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "repository": {
     "url": "https://github.com/Ryhus/anki-mcp",
     "source": "github",
@@ -15,7 +15,7 @@
       "registryType": "npm",
       "registryBaseUrl": "https://registry.npmjs.org",
       "identifier": "@ryhus/anki-mcp",
-      "version": "0.1.1",
+      "version": "0.1.2",
       "runtimeHint": "npx",
       "transport": {
         "type": "stdio"

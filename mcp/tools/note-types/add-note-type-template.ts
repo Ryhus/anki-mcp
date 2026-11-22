@@ -13,7 +13,7 @@ import { containsClozeFilter } from "./note-type-definition-validator.js";
 import { buildNoteTypeSearchQuery } from "./note-type-schema-utils.js";
 import {
   createDesignRevisionIssue,
-  hasNoteTypeTemplateName,
+  findConflictingNoteTypeTemplate,
   hasSameTemplateDesign,
 } from "./note-type-template-utils.js";
 import {
@@ -155,12 +155,13 @@ export async function addNoteTypeTemplate({
     issues.push(revisionIssue);
   }
 
-  if (hasNoteTypeTemplateName(current.templates, templateName)) {
+  const conflict = findConflictingNoteTypeTemplate(current.templates, templateName);
+  if (conflict !== undefined) {
     issues.push({
       severity: "error",
       code: "template_already_exists",
       path: "templateName",
-      message: `A card template named "${templateName}" already exists.`,
+      message: `Anki treats card template "${templateName}" as the same name as existing template "${conflict.name}".`,
     });
   }
 
@@ -235,10 +236,7 @@ export async function addNoteTypeTemplate({
     });
   }
 
-  const canBuildProposal = !hasNoteTypeTemplateName(
-    current.templates,
-    templateName,
-  );
+  const canBuildProposal = conflict === undefined;
   const addedTemplate = {
     name: templateName,
     order: current.templates.length,

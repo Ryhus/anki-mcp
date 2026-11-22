@@ -1,4 +1,5 @@
 import type { DesignValidationIssue, NoteTypeTemplateDesign } from "./shared-schemas.js";
+import { ankiStructureNameKey } from "./anki-structure-names.js";
 import {
   buildNoteTypeSearchQuery,
   escapeAnkiSearchLiteral,
@@ -33,14 +34,15 @@ export function findNoteTypeTemplate(
   return templates.find(({ name }) => name === templateName);
 }
 
-/** Checks template name uniqueness without allowing case-only ambiguity. */
-export function hasNoteTypeTemplateName(
+/** Finds a conflicting template under Anki's name comparison rules. */
+export function findConflictingNoteTypeTemplate(
   templates: NoteTypeTemplateDesign[],
   templateName: string,
-): boolean {
-  const normalizedName = templateName.toLowerCase();
-  return templates.some(
-    ({ name }) => name.toLowerCase() === normalizedName,
+  except?: NoteTypeTemplateDesign,
+): NoteTypeTemplateDesign | undefined {
+  const key = ankiStructureNameKey(templateName, "template");
+  return templates.find(
+    (template) => template !== except && ankiStructureNameKey(template.name, "template") === key,
   );
 }
 
