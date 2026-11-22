@@ -1,3 +1,4 @@
+import { hasUniqueAnkiStructureNames } from "./anki-structure-names.js";
 import { validateCss } from "./css-validator.js";
 import { combineValidations, createDesignValidation } from "./design-validation.js";
 import type {
@@ -28,6 +29,19 @@ export function validateNoteTypeDefinition({
 }: NoteTypeDefinitionValidationInput): DesignValidation {
   const validations: DesignValidation[] = [validateCss(css)];
   const issues: DesignValidationIssue[] = [];
+
+  if (!hasUniqueAnkiStructureNames(fieldNames, "field")) {
+    issues.push({
+      severity: "error", code: "duplicate_field_names", path: "fields",
+      message: "Field names must be unique under Anki's name comparison rules.",
+    });
+  }
+  if (!hasUniqueAnkiStructureNames(templates.map(({ name }) => name), "template")) {
+    issues.push({
+      severity: "error", code: "duplicate_template_names", path: "templates",
+      message: "Card template names must be unique under Anki's name comparison rules.",
+    });
+  }
 
   for (const [index, template] of templates.entries()) {
     validations.push(

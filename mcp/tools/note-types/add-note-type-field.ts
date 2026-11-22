@@ -3,6 +3,7 @@ import { z } from "zod";
 import { addAnkiNoteTypeField } from "../../../anki-api/note-types/note-type-client.js";
 import { ADDITIVE_TOOL_ANNOTATIONS } from "../../utils/tool-annotations.js";
 import { createToolResult } from "../../utils/tool-result.js";
+import { ankiStructureNameKey } from "./anki-structure-names.js";
 import { createDesignValidation } from "./design-validation.js";
 import {
   calculateNoteTypeSchemaHash,
@@ -82,6 +83,8 @@ export async function addNoteTypeField({
 }: AddNoteTypeFieldInput): Promise<CallToolResult> {
   const current = await loadNoteTypeSchema(modelName);
   const previousFieldNames = current.fields.map(({ name }) => name);
+  const fieldKey = ankiStructureNameKey(fieldName, "field");
+  const conflictingName = previousFieldNames.find((name) => ankiStructureNameKey(name, "field") === fieldKey);
   const targetOrder = order ?? previousFieldNames.length;
   const issues: DesignValidationIssue[] = [];
   const revisionIssue = createSchemaRevisionIssue(
@@ -93,12 +96,12 @@ export async function addNoteTypeField({
     issues.push(revisionIssue);
   }
 
-  if (previousFieldNames.includes(fieldName)) {
+  if (conflictingName !== undefined) {
     issues.push({
       severity: "error",
       code: "field_already_exists",
       path: "fieldName",
-      message: `Field "${fieldName}" already exists in note type "${modelName}".`,
+      message: `Anki treats field "${fieldName}" as the same name as existing field "${conflictingName}" in "${modelName}".`,
     });
   }
 
@@ -112,7 +115,7 @@ export async function addNoteTypeField({
   }
 
   const canBuildProposal =
-    !previousFieldNames.includes(fieldName) &&
+    conflictingName === undefined &&
     targetOrder <= previousFieldNames.length;
   const proposedFieldNames = [...previousFieldNames];
 

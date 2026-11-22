@@ -11,6 +11,7 @@ import { openV1Adapter } from "../../../anki-api/v1/anki-v1-adapter-utils.js";
 import { getV1NameMap, getV1NoteTypeDesignWithSortField } from "../../../anki-api/v1/anki-v1-collection-client.js";
 import { ADDITIVE_TOOL_ANNOTATIONS } from "../../utils/tool-annotations.js";
 import { createToolResult } from "../../utils/tool-result.js";
+import { hasUniqueAnkiStructureNames } from "./anki-structure-names.js";
 import { createDesignValidation } from "./design-validation.js";
 import { buildNoteTypeCloneDefinition } from "./note-type-clone-utils.js";
 import { loadNoteTypeDesign, normalizeV1NoteTypeDesign } from "./note-type-design-utils.js";
@@ -137,6 +138,20 @@ export async function cloneNoteType({
     definition.isCloze, source.designHash, definition.inOrderFields, sortField,
   ])).digest("hex");
   const issues: DesignValidationIssue[] = [];
+  const templateNames = definition.cardTemplates.map(({ Name }) => Name);
+
+  if (!hasUniqueAnkiStructureNames(definition.inOrderFields, "field")) {
+    issues.push({
+      severity: "error", code: "duplicate_field_names", path: "sourceModelName",
+      message: "The source contains field names that Anki treats as duplicates.",
+    });
+  }
+  if (!hasUniqueAnkiStructureNames(templateNames, "template")) {
+    issues.push({
+      severity: "error", code: "duplicate_template_names", path: "sourceModelName",
+      message: "The source contains card template names that Anki treats as duplicates.",
+    });
+  }
 
   if (Object.hasOwn(noteTypes, targetModelName)) {
     issues.push({
@@ -211,7 +226,7 @@ export async function cloneNoteType({
     cloneSummary: {
       fieldNames: definition.inOrderFields,
       sortField,
-      templateNames: definition.cardTemplates.map(({ Name }) => Name),
+      templateNames,
       cssLength: definition.css.length,
     },
     validation,

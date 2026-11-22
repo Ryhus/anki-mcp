@@ -14,6 +14,7 @@ import {
   loadNoteTypeDesign,
   NOTE_TYPE_SCOPE_WARNING,
 } from "./note-type-design-utils.js";
+import { hasUniqueAnkiStructureNames } from "./anki-structure-names.js";
 import { validateNoteTypeDefinition } from "./note-type-definition-validator.js";
 import {
   calculateNoteTypeSchemaHash,
@@ -66,10 +67,8 @@ const createNoteTypeInputSchema = z.object({
     .min(1)
     .max(100)
     .refine(
-      (fields) =>
-        new Set(fields.map((field) => field.toLowerCase())).size ===
-        fields.length,
-      { message: "Field names must be unique" },
+      (fields) => hasUniqueAnkiStructureNames(fields, "field"),
+      { message: "Field names must be unique under Anki's name comparison rules" },
     )
     .describe(
       "Field names in their desired order. The first field is used for duplicate checks.",
@@ -81,10 +80,8 @@ const createNoteTypeInputSchema = z.object({
     .min(1)
     .max(50)
     .refine(
-      (templates) =>
-        new Set(templates.map(({ name }) => name.toLowerCase())).size ===
-        templates.length,
-      { message: "Card template names must be unique" },
+      (templates) => hasUniqueAnkiStructureNames(templates.map(({ name }) => name), "template"),
+      { message: "Card template names must be unique under Anki's name comparison rules" },
     ),
   css: z
     .string()

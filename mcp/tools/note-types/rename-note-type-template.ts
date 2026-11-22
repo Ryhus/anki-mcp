@@ -10,6 +10,7 @@ import {
 } from "./note-type-design-utils.js";
 import {
   createDesignRevisionIssue,
+  findConflictingNoteTypeTemplate,
   findNoteTypeTemplate,
   hasSameTemplateDesign,
   normalizeTemplateOrders,
@@ -95,10 +96,8 @@ export async function renameNoteTypeTemplate({
     current.templates,
     oldTemplateName,
   );
-  const conflictingTemplate = current.templates.find(
-    ({ name }) =>
-      name !== oldTemplateName &&
-      name.toLowerCase() === newTemplateName.toLowerCase(),
+  const conflictingTemplate = findConflictingNoteTypeTemplate(
+    current.templates, newTemplateName, oldTemplateName === newTemplateName ? undefined : existing,
   );
   const issues: DesignValidationIssue[] = [];
   const revisionIssue = createDesignRevisionIssue(
@@ -122,7 +121,7 @@ export async function renameNoteTypeTemplate({
       severity: "error",
       code: "template_already_exists",
       path: "newTemplateName",
-      message: `A card template named "${newTemplateName}" already exists.`,
+      message: `Anki treats card template "${newTemplateName}" as the same name as existing template "${conflictingTemplate.name}".`,
     });
   }
 
